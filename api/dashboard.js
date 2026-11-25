@@ -3,21 +3,22 @@ import { marketState, quote, validCoin } from "../lib/market.js";
 import { modelEnabled, signal } from "../lib/model.js";
 import { alertStore, publicStatus, setPaused } from "../lib/state.js";
 import { allowedChat } from "../lib/telegram.js";
-import { dashboard, loginPage } from "../lib/views.js";
+import { accessPage, dashboard } from "../lib/views.js";
 
 export default async function handler(req, res) {
   privacyHeaders(res);
   const url = new URL(req.url, "http://localhost");
   const view = url.searchParams.get("view");
-  const password = process.env.DASHBOARD_PASSWORD;
-  const configured = Boolean(password?.length >= 32 && (!process.env.VERCEL || process.env.APP_ORIGIN?.startsWith("https://")));
+  const key = process.env.DASHBOARD_ACCESS_KEY;
+  const configured = Boolean(key && /^[A-Za-z0-9_-]{32,128}$/.test(key) &&
+    (!process.env.VERCEL || process.env.APP_ORIGIN?.startsWith("https://")));
   if (!configured) {
     return view || req.method !== "GET" ? json(res, 503, { error: "Dashboard setup required" }) :
       html(res, 503, "<!doctype html><h1>Dashboard setup required</h1><p>The owner must configure private access.</p>");
   }
 
-  const signedIn = hasSession(req, password);
-  if (req.method === "GET" && !view) return html(res, 200, signedIn ? dashboard : loginPage());
+  const hasAccess = hasSession(req, key);
+  if (req.method === "GET" && !view) return html(res, 200, hasAccess ? dashboard : accessPage);
   if (req.method === "POST" && !sameOrigin(req)) return json(res, 403, { error: "Origin check failed" });
 
   let body;
@@ -27,21 +28,18 @@ export default async function handler(req, res) {
     } catch {
       return json(res, 400, { error: "Invalid request" });
     }
-    if (body?.action === "login") {
-      if (!sameSecret(body.password, password)) return html(res, 401, loginPage("Passphrase did not match."));
-      res.setHeader("Set-Cookie", sessionCookie(password));
-      res.statusCode = 303;
-      res.setHeader("Location", "/");
+    if (body?.action === "open") {
+      if (!sameSecret(body.key, key)) return json(res, 401, { error: "Access link is invalid" });
+      res.setHeader("Set-Cookie", sessionCookie(key));
+      res.statusCode = 204;
       return res.end();
     }
   }
-  if (!signedIn) return json(res, 401, { error: "Sign in to the dashboard" });
+  if (!hasAccess) return json(res, 401, { error: "Open your private dashboard link" });
 
   if (req.method === "POST" && body?.action === "logout") {
-    res.setHeader("Set-Cookie", sessionCookie(password, true));
-    res.statusCode = 303;
-    res.setHeader("Location", "/");
-    return res.end();
+    res.setHeader("Set-Cookie", sessionCookie(key, true));
+    return json(res, 200, { locked: true });
   }
 
   try {
@@ -52,8 +50,17 @@ export default async function handler(req, res) {
     }
     if (req.method === "GET" && view === "status") {
       const connected = Boolean(process.env.BLOB_READ_WRITE_TOKEN && process.env.TELEGRAM_BOT_TOKEN && allowedChat());
-      const alerts = connected ? publicStatus(await alertStore().current()) : null;
-      return json(res, 200, { alerts, manualModel: modelEnabled("manual"), scheduledModel: modelEnabled("scheduled") });
+      let alerts = null;
+      let alertError = false;
+      if (connected) {
+        try {
+          alerts = publicStatus(await alertStore().current());
+        } catch {
+          alertError = true;
+        }
+      }
+      return json(res, 200, { alerts, manualModel: modelEnabled("manual"), scheduledModel: modelEnabled("scheduled"),
+        ...(alertError ? { alertError } : {}) });
     }
     if (req.method === "POST" && body?.action === "alerts" && typeof body.paused === "boolean") {
       if (!allowedChat() || !process.env.TELEGRAM_BOT_TOKEN) return json(res, 503, { error: "Telegram is not configured" });

@@ -160,6 +160,12 @@ async function refreshStatus() {
     $("judge").disabled = !manualModel || submitting;
     if (!manualModel) $("model-status").textContent = "Jev calls are off. Live prices remain available.";
     alerts = status.alerts;
+    if (status.alertError) {
+      $("alert-pill").textContent = "Unavailable";
+      $("alert-note").textContent = "Could not read alerts. Use Sync status to retry.";
+      $("toggle").disabled = true;
+      return;
+    }
     renderAlerts(status.scheduledModel);
   } catch {
     $("alert-pill").textContent = "Unavailable";
@@ -235,6 +241,16 @@ coin.addEventListener("change", () => {
 });
 $("refresh").addEventListener("click", refreshQuote);
 $("sync-status").addEventListener("click", refreshStatus);
+$("lock").addEventListener("click", async () => {
+  $("lock").disabled = true;
+  try {
+    await api("", { action: "logout" });
+    location.replace("/");
+  } catch {
+    $("model-status").textContent = "Could not lock the dashboard. Try again.";
+    $("lock").disabled = false;
+  }
+});
 window.addEventListener("resize", drawChart);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) refreshStatus();

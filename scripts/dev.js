@@ -13,7 +13,12 @@ const routes = new Map([
   ["/api/alerts", alerts],
   ["/api/telegram", telegram],
 ]);
-const contentTypes = new Map([["/style.css", "text/css"], ["/dashboard.js", "text/javascript"], ["/strategy.js", "text/javascript"]]);
+const contentTypes = new Map([
+  ["/style.css", "text/css"],
+  ["/access.js", "text/javascript"],
+  ["/dashboard.js", "text/javascript"],
+  ["/strategy.js", "text/javascript"],
+]);
 
 const server = createServer(async (req, res) => {
   try {
@@ -31,4 +36,4 @@ const server = createServer(async (req, res) => {
     res.end("Request failed");
   }
 });
-server.listen(port, "127.0.0.1", () => console.log("Private local web app at http://127.0.0.1:" + port));
+server.listen(port, "127.0.0.1", () => console.log("Private local web app at http://127.0.0.1:" + server.address().port));

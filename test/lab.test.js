@@ -9,7 +9,7 @@ import { checkAlerts } from "../lib/alerts.js";
 import { createStore, setPaused } from "../lib/state.js";
 import { decide, simulateFill } from "../public/strategy.js";
 
-const password = randomBytes(32).toString("hex");
+const accessKey = randomBytes(32).toString("hex");
 const origin = "http://127.0.0.1:8767";
 
 async function call(handler, { url = "/", method = "GET", headers = {}, body } = {}) {
@@ -21,22 +21,24 @@ async function call(handler, { url = "/", method = "GET", headers = {}, body } =
   return { ...result, status: res.statusCode };
 }
 
-test("the private dashboard requires a signed cookie and same-origin writes", async () => {
-  process.env.DASHBOARD_PASSWORD = password;
+test("the private access link creates a signed session and browser writes require the same origin", async () => {
+  process.env.DASHBOARD_ACCESS_KEY = accessKey;
   process.env.APP_ORIGIN = origin;
   delete process.env.ENABLE_MANUAL_MODEL;
   delete process.env.BLOB_READ_WRITE_TOKEN;
   try {
-    const login = await call(dashboard);
-    assert.match(login.body, /Private dashboard/);
-    assert.doesNotMatch(login.body, /Decision history/);
+    const entry = await call(dashboard);
+    assert.match(entry.body, /Private dashboard/);
+    assert.doesNotMatch(entry.body, /Decision history|type="password"/);
     assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 401);
-    assert.equal((await call(dashboard, { method: "POST", body: { action: "login", password } })).status, 403);
-    const signedIn = await call(dashboard, { method: "POST", headers: { origin }, body: { action: "login", password } });
-    assert.equal(signedIn.status, 303);
-    assert.match(signedIn.headers["Set-Cookie"], /HttpOnly; Path=\/; SameSite=Strict/);
-    assert.equal(signedIn.headers["Cache-Control"], "private, no-store");
-    const headers = { origin, cookie: signedIn.headers["Set-Cookie"].split(";")[0] };
+    assert.equal((await call(dashboard, { method: "POST", body: { action: "open", key: accessKey } })).status, 403);
+    assert.equal((await call(dashboard, { method: "POST", headers: { origin },
+      body: { action: "open", key: "wrong" } })).status, 401);
+    const opened = await call(dashboard, { method: "POST", headers: { origin }, body: { action: "open", key: accessKey } });
+    assert.equal(opened.status, 204);
+    assert.match(opened.headers["Set-Cookie"], /HttpOnly; Path=\/; SameSite=Strict/);
+    assert.equal(opened.headers["Cache-Control"], "private, no-store");
+    const headers = { origin, cookie: opened.headers["Set-Cookie"].split(";")[0] };
     assert.match((await call(dashboard, { headers })).body, /Decision history/);
     const status = JSON.parse((await call(dashboard, { url: "/api/dashboard?view=status", headers })).body);
     assert.deepEqual(status, { alerts: null, manualModel: false, scheduledModel: false });
@@ -44,7 +46,7 @@ test("the private dashboard requires a signed cookie and same-origin writes", as
     assert.equal((await call(dashboard, { method: "POST", headers: { ...headers, origin: "https://unrelated.invalid" },
       body: { action: "alerts", paused: false } })).status, 403);
   } finally {
-    delete process.env.DASHBOARD_PASSWORD;
+    delete process.env.DASHBOARD_ACCESS_KEY;
     delete process.env.APP_ORIGIN;
   }
 });
