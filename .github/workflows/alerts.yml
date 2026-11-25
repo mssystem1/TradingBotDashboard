@@ -1,0 +1,31 @@
+name: Paper alerts
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: paper-alerts
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: vars.ALERT_JOB_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      APP_ORIGIN: ${{ vars.ALERT_APP_ORIGIN }}
+      JOB_KEY: ${{ secrets.ALERT_JOB_SECRET }}
+    steps:
+      - name: Check paper alerts
+        shell: bash
+        run: |
+          if [[ ! "$APP_ORIGIN" =~ ^https://[a-zA-Z0-9.-]+$ || ${#JOB_KEY} -lt 32 ]]; then
+            echo "Set the Vercel HTTPS origin and alert job secret."
+            exit 1
+          fi
+          curl --proto '=https' --max-time 35 --fail --silent --show-error \
+            --request POST --header "Authorization: Bearer $JOB_KEY" "$APP_ORIGIN/api/alerts"

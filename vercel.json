@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "outputDirectory": "public",
+  "rewrites": [{ "source": "/", "destination": "/api/dashboard" }],
+  "functions": { "api/*.js": { "maxDuration": 25 } }
+}
