@@ -6,7 +6,7 @@ TradingBotDashboard, shown in the browser as **Jev Signal Lab**, is a private da
 
 | Feature | What it shows or does |
 | --- | --- |
-| Live market view | The midpoint between the best bid and ask, a recent price chart, and the quote time. **Refresh quote** retrieves a snapshot if the stream is unavailable. |
+| Live market view | The midpoint between the best bid and ask, a chart seeded from completed one-minute candles, and the quote time. If streaming is unavailable, the dashboard refreshes its snapshot every 15 seconds while the browser tab is visible. |
 | Ask Jev | Requests one BUY or SELL forecast for the next 15 minutes using recent market data. The decision history shows the direction, model confidence, response time, and paper action. |
 | Paper account | Starts at $1,000. The dashboard shows the current position, balance, gross P&L, fees, and net P&L. |
 | Telegram controls | Pause or resume scheduled paper alerts from the dashboard or a single authorized Telegram chat. Both controls use the same saved setting. |

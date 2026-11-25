@@ -1,5 +1,5 @@
 import { hasSession, html, json, privacyHeaders, requestBody, sameOrigin, sameSecret, sessionCookie } from "../lib/http.js";
-import { marketState, quote, validCoin } from "../lib/market.js";
+import { marketState, priceHistory, quote, validCoin } from "../lib/market.js";
 import { modelEnabled, signal } from "../lib/model.js";
 import { alertStore, publicStatus, setPaused } from "../lib/state.js";
 import { allowedChat } from "../lib/telegram.js";
@@ -46,7 +46,11 @@ export default async function handler(req, res) {
     if (req.method === "GET" && view === "quote") {
       const coin = url.searchParams.get("coin") || "BTC";
       if (!validCoin(coin)) return json(res, 400, { error: "Unsupported market" });
-      return json(res, 200, { quote: await quote(coin) });
+      const [latest, history] = await Promise.all([
+        quote(coin),
+        url.searchParams.get("history") === "1" ? priceHistory(coin).catch(() => []) : [],
+      ]);
+      return json(res, 200, { quote: latest, history });
     }
     if (req.method === "GET" && view === "status") {
       const connected = Boolean(process.env.BLOB_READ_WRITE_TOKEN && process.env.TELEGRAM_BOT_TOKEN && allowedChat());

@@ -58,12 +58,13 @@ async function startApp(t, { enableModel = true, blobUnavailable = false } = {})
   return { origin, key, jobKey, webhookKey, notifications: () => notifications };
 }
 
-async function pageFor(t, options) {
+async function pageFor(t, options, { liveFeed = true } = {}) {
   const context = await browser.newContext(options);
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   t.after(() => context.close());
   await page.routeWebSocket("wss://api.hyperliquid.xyz/ws", route => {
+    if (!liveFeed) return route.close();
     route.onMessage(message => {
       const { method, subscription } = JSON.parse(message.toString());
       if (method !== "subscribe") return;
@@ -137,6 +138,27 @@ test("market switching, buy, cooldown, low confidence, and paper fees work in th
   await page.getByRole("button", { name: "Refresh quote" }).click();
   await waitForText(page.locator("#price"), "$40");
   assert.deepEqual(errors, []);
+});
+
+test("the chart starts with real-format history, and snapshots keep refreshing when the stream is down", async t => {
+  const app = await startApp(t, { enableModel: false });
+  const page = await pageFor(t, {}, { liveFeed: false });
+  await page.clock.install();
+  await openDashboard(page, app);
+  await waitForText(page.locator("#feed-status"), "Snapshot");
+  await waitForText(page.locator("#price"), "$100");
+  const chartHasLine = await page.locator("#chart").evaluate(canvas => {
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] > 150 && pixels[i + 1] > 220 && pixels[i + 2] > 160) return true;
+    }
+    return false;
+  });
+  assert.ok(chartHasLine, "completed candles should fill in the chart before a second quote");
+  const snapshot = page.waitForResponse(response =>
+    response.url() === app.origin + "/api/dashboard?view=quote&coin=BTC" && response.ok());
+  await page.clock.fastForward(16_000);
+  assert.equal((await (await snapshot).json()).quote.price, 100);
 });
 
 test("Telegram and the dashboard share pause state, and a scheduled check sends at most once", async t => {

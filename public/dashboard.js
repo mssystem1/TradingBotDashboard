@@ -3,6 +3,7 @@ import { decide, simulateFill } from "./strategy.js";
 const $ = id => document.getElementById(id);
 const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const midpoint = new Intl.NumberFormat("en-US", { maximumFractionDigits: 5 });
+const SNAPSHOT_INTERVAL_MS = 15_000;
 const marketEndpoint = "/api/dashboard";
 const coin = $("coin");
 const books = new Map();
@@ -15,6 +16,7 @@ let submitting = false;
 let toggling = false;
 let historyStarted = false;
 let lastPointAt = 0;
+let lastLiveAt = 0;
 
 async function api(query, body) {
   const response = await fetch(marketEndpoint + query, body ? {
@@ -59,15 +61,18 @@ function drawChart() {
     ctx.stroke();
   }
   if (points.length < 2) return;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+  const prices = points.map(([, value]) => value);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
   const span = max - min || max * 0.00005;
+  const start = points[0][0];
+  const duration = Math.max(1, points.at(-1)[0] - start);
   ctx.strokeStyle = "#a9f5c3";
   ctx.lineWidth = 2 * ratio;
   ctx.beginPath();
-  points.forEach((point, i) => {
-    const x = (w - 2) * i / (points.length - 1);
-    const y = h * (0.86 - 0.72 * (point - min) / span);
+  points.forEach(([time, value], i) => {
+    const x = (w - 2) * (time - start) / duration;
+    const y = h * (0.86 - 0.72 * (value - min) / span);
     if (i) ctx.lineTo(x, y);
     else ctx.moveTo(x, y);
   });
@@ -81,7 +86,7 @@ function showQuote(latestPrice, at) {
   $("quote-time").textContent = "Observed " + new Date(at).toLocaleTimeString();
   if (at - lastPointAt >= 150) {
     lastPointAt = at;
-    points.push(price);
+    points.push([at, price]);
     if (points.length > 350) points.shift();
     drawChart();
   }
@@ -93,15 +98,24 @@ function feedStatus(text, active = false) {
   $("feed-status").classList.toggle("neutral", !active);
 }
 
-async function refreshQuote() {
+function hasLiveFeed() {
+  return socket?.readyState === WebSocket.OPEN && Date.now() - lastLiveAt < SNAPSHOT_INTERVAL_MS;
+}
+
+async function refreshQuote(withHistory = false) {
   const selected = coin.value;
   try {
-    const { quote } = await api("?view=quote&coin=" + selected);
-    if (selected !== coin.value || quote.time < lastPointAt) return;
-    showQuote(quote.price, quote.time);
-    if (socket?.readyState !== WebSocket.OPEN) feedStatus("Snapshot");
+    const { quote, history } = await api("?view=quote&coin=" + selected + (withHistory ? "&history=1" : ""));
+    if (selected !== coin.value) return;
+    if (Array.isArray(history) && history.length) {
+      const earliest = points[0]?.[0] ?? quote.time;
+      points = history.filter(([time]) => time < earliest).concat(points);
+      drawChart();
+    }
+    if (quote.time >= lastPointAt) showQuote(quote.price, quote.time);
+    if (!hasLiveFeed()) feedStatus("Snapshot");
   } catch {
-    if (socket?.readyState !== WebSocket.OPEN) feedStatus("Feed unavailable");
+    if (!hasLiveFeed()) feedStatus("Feed unavailable");
   }
 }
 
@@ -123,14 +137,17 @@ function connect() {
       const { channel, data } = JSON.parse(event.data);
       if (channel !== "bbo" || data.coin !== selected || !data.bbo?.every(Boolean)) return;
       const [bid, ask] = data.bbo;
-      showQuote((Number(bid.px) + Number(ask.px)) / 2, data.time || Date.now());
+      const value = (Number(bid.px) + Number(ask.px)) / 2;
+      if (!Number.isFinite(value) || value <= 0) return;
+      lastLiveAt = Date.now();
+      showQuote(value, data.time || lastLiveAt);
       feedStatus("Live", true);
     } catch { /* Skip malformed exchange messages. */ }
   });
   next.addEventListener("close", () => {
     clearInterval(ping);
     if (next !== socket) return;
-    feedStatus("Reconnecting");
+    feedStatus(price > 0 ? "Snapshot" : "Reconnecting");
     setTimeout(() => {
       if (next === socket) connect();
     }, 5000);
@@ -231,15 +248,16 @@ $("toggle").addEventListener("click", async () => {
 coin.addEventListener("change", () => {
   points = [];
   lastPointAt = 0;
+  lastLiveAt = 0;
   price = 0;
   $("price").textContent = "—";
   $("quote-time").textContent = "Waiting for a market quote";
   feedStatus("Connecting");
   drawChart();
-  refreshQuote();
+  refreshQuote(true);
   connect();
 });
-$("refresh").addEventListener("click", refreshQuote);
+$("refresh").addEventListener("click", () => refreshQuote());
 $("sync-status").addEventListener("click", refreshStatus);
 $("lock").addEventListener("click", async () => {
   $("lock").disabled = true;
@@ -253,9 +271,15 @@ $("lock").addEventListener("click", async () => {
 });
 window.addEventListener("resize", drawChart);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refreshStatus();
+  if (!document.hidden) {
+    refreshStatus();
+    if (!hasLiveFeed()) refreshQuote();
+  }
 });
+setInterval(() => {
+  if (!document.hidden && !hasLiveFeed()) refreshQuote();
+}, SNAPSHOT_INTERVAL_MS);
 drawChart();
 connect();
-refreshQuote();
+refreshQuote(true);
 refreshStatus();
