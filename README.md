@@ -24,8 +24,8 @@ npm ci
 cp .env.example .env.local
 ```
 
-1. Open `.env.local` and set `DASHBOARD_ACCESS_KEY` to a unique, random key of at least 32 URL-safe characters. Leave both model flags off for the first run.
-2. Run `npm run dev` and open your private link. It has the form `http://127.0.0.1:8767/#access=YOUR_KEY`. The dashboard opens with no password prompt.
+1. Open `.env.local` and set `DASHBOARD_ADMIN_PASSWORD` to a unique password of 16 to 128 characters. Set `DASHBOARD_SESSION_KEY` to a separate, random value of at least 32 URL-safe characters. The local username defaults to `admin`. Leave both model flags off for the first run.
+2. Run `npm run dev` and open [the local dashboard](http://127.0.0.1:8767/). Sign in with the username and password from your local settings.
 3. Choose a market and check that the price is updating. Use **Refresh quote** to check the latest snapshot. Press Ctrl+C in the terminal to stop the app.
 
 ## Run the tests
@@ -33,11 +33,12 @@ cp .env.example .env.local
 `npm test` checks access control, paper-fill accounting, alert scheduling, and the exact command the alert workflow runs. The workflow test needs Bash. On Windows, use Git Bash or WSL.
 
 ```sh
-npx playwright install chromium
+npx playwright install chromium webkit
 npm run test:e2e
+JEV_TEST_BROWSER=webkit npm run test:e2e
 ```
 
-Playwright exercises the private link, the live-price interface, market switching, simulated fills, and pause and resume in both the dashboard and the Telegram webhook. It checks the desktop, tablet, and phone layouts along with automated accessibility rules. The tests use simulated provider responses. They require no real keys, model credits, or Telegram account. The **Dashboard tests** GitHub workflow runs both suites.
+Playwright exercises sign-in and sign-out, the live-price interface, market switching, simulated fills, and pause and resume in both the dashboard and the Telegram webhook. It checks the desktop, tablet, and phone layouts along with automated accessibility rules in Chromium and WebKit, the browser engine Safari uses. The tests use simulated provider responses. They require no real keys, model credits, or Telegram account. The **Dashboard tests** GitHub workflow runs these checks.
 
 ## How the paper strategy works
 
@@ -50,11 +51,11 @@ To change the confidence threshold or the waiting period, edit `MIN_CONFIDENCE` 
 ## Deploy the dashboard to Vercel
 
 1. Import this repository into a Vercel project. The included [Vercel configuration](vercel.json) serves the frontend and routes dashboard requests to a Node.js function.
-2. Add `DASHBOARD_ACCESS_KEY` and `APP_ORIGIN` in the project's production environment settings. Set the origin to the exact HTTPS address you will open in the browser, such as `https://your-project.vercel.app`, without a trailing slash.
-3. Deploy or redeploy. Open the configured URL with `/#access=YOUR_KEY` and confirm that a quote loads. Treat the private link like a password. After opening it, the app removes the key from the address bar and keeps access in a browser session. **Lock dashboard** ends that session. Rotate the key and redeploy if you need to revoke an old link or session.
+2. In Vercel under **Environment Variables**, set `APP_ORIGIN` to the exact HTTPS address you will open in the browser, with no trailing slash. In the **Production** environment, add `DASHBOARD_ADMIN_PASSWORD` and a separate `DASHBOARD_SESSION_KEY` as **Secret** variables. Set `DASHBOARD_ADMIN_USERNAME` if you want a username other than `admin`.
+3. Deploy or redeploy, then open the configured HTTPS address. Sign in with the same username and password from each browser or device. **Sign out** clears that browser's session. To change the password, update `DASHBOARD_ADMIN_PASSWORD` in Vercel and redeploy to Production. Existing sessions expire as soon as the new production deployment takes over. The app stays locked until its sign-in settings are complete.
 4. To enable **Ask Jev**, add `AI_GATEWAY_API_KEY`, set `ENABLE_MANUAL_MODEL=true`, and redeploy after reviewing your AI Gateway budget. Manual calls and scheduled alerts have separate switches.
 
-The app requires a signed session cookie for dashboard data and validates the request origin before accepting browser changes. Keep credentials in local environment files or the relevant service's secret settings. If you enable scheduled alerts or Telegram, their HTTPS endpoints must be reachable by those services. Each endpoint checks its own secret.
+The single admin login uses Vercel environment variables and needs no account database. The app requires a signed 12-hour session cookie for dashboard data, limits failed sign-in attempts per server instance, and checks the request origin before accepting browser changes. Keep credentials in local environment files or the relevant service's secret settings. If you enable scheduled alerts or Telegram, their HTTPS endpoints must be reachable by those services. Each endpoint checks its own secret.
 
 ## Set up Telegram paper alerts
 
@@ -76,7 +77,9 @@ The workflow is configured to check four times an hour. With the default limit o
 
 | Setting | Where it goes | Purpose |
 | --- | --- | --- |
-| `DASHBOARD_ACCESS_KEY` | Local / Vercel | Random private-link key, 32 to 128 letters, numbers, underscores, or hyphens. |
+| `DASHBOARD_ADMIN_USERNAME` | Local / Vercel | The single admin username, default `admin`. Up to 64 letters, numbers, periods, underscores, or hyphens, starting with a letter or number. |
+| `DASHBOARD_ADMIN_PASSWORD` | Local / Vercel Secret | The admin's unique password, 16 to 128 characters. |
+| `DASHBOARD_SESSION_KEY` | Local / Vercel Secret | Random signing key separate from the password, 32 to 128 letters, numbers, underscores, or hyphens. |
 | `APP_ORIGIN` | Vercel / local webhook setup | Exact production HTTPS origin. For local dashboard use, it can be left blank. |
 | `AI_GATEWAY_API_KEY` | Local / Vercel | Needed for Jev requests. Use a Gateway key with a spend limit appropriate for testing. |
 | `ENABLE_MANUAL_MODEL` | Local / Vercel | Enables **Ask Jev**. Defaults to `false`. |
@@ -92,7 +95,7 @@ The workflow is configured to check four times an hour. With the default limit o
 
 | Path | Responsibility |
 | --- | --- |
-| `api/dashboard.js` | Private-link access, public market data for authorized sessions, manual Jev calls, and dashboard alert controls. |
+| `api/dashboard.js`, `lib/auth.js` | Admin sign-in, market data for signed-in sessions, manual Jev calls, and dashboard alert controls. |
 | `api/telegram.js` | Authenticated Telegram webhook and private-chat commands. |
 | `api/alerts.js`, `lib/alerts.js` | Scheduled alert checks, daily request limits, and notification logic. |
 | `lib/state.js` | Shared alert state in private Blob storage, with conditional writes to prevent lost updates. |

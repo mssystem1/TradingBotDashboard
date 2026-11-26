@@ -6,49 +6,110 @@ import dashboard from "../api/dashboard.js";
 import telegram from "../api/telegram.js";
 import alerts from "../api/alerts.js";
 import { checkAlerts } from "../lib/alerts.js";
+import { sessionCookie } from "../lib/http.js";
 import { createStore, setPaused } from "../lib/state.js";
 import { decide, simulateFill } from "../public/strategy.js";
 
-const accessKey = randomBytes(32).toString("hex");
-const origin = "http://127.0.0.1:8767";
+const sessionKey = randomBytes(32).toString("base64url");
+const password = randomBytes(24).toString("base64url");
+const username = "fixture-admin";
+const origin = "https://dashboard.example";
 
-async function call(handler, { url = "/", method = "GET", headers = {}, body } = {}) {
-  const req = Readable.from(body ? [JSON.stringify(body)] : []);
-  Object.assign(req, { url, method, headers: { ...headers, ...(body ? { "content-type": "application/json" } : {}) } });
+async function call(handler, { url = "/", method = "GET", headers = {}, body, address = "192.0.2.1" } = {}) {
+  const form = body instanceof URLSearchParams;
+  const req = Readable.from(body ? [form ? body.toString() : JSON.stringify(body)] : []);
+  const contentType = form ? "application/x-www-form-urlencoded" : "application/json";
+  Object.assign(req, { url, method, socket: { remoteAddress: address }, headers: { ...headers, ...(body ? { "content-type": contentType } : {}) } });
   const result = { headers: {} };
   const res = { statusCode: 200, setHeader(name, value) { result.headers[name] = value; }, end(value) { result.body = value; } };
   await handler(req, res);
   return { ...result, status: res.statusCode };
 }
 
-test("the private access link creates a signed session and browser writes require the same origin", async () => {
-  process.env.DASHBOARD_ACCESS_KEY = accessKey;
-  process.env.APP_ORIGIN = origin;
-  delete process.env.ENABLE_MANUAL_MODEL;
-  delete process.env.BLOB_READ_WRITE_TOKEN;
-  try {
-    const entry = await call(dashboard);
-    assert.match(entry.body, /Private dashboard/);
-    assert.doesNotMatch(entry.body, /Decision history|type="password"/);
-    assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 401);
-    assert.equal((await call(dashboard, { method: "POST", body: { action: "open", key: accessKey } })).status, 403);
-    assert.equal((await call(dashboard, { method: "POST", headers: { origin },
-      body: { action: "open", key: "wrong" } })).status, 401);
-    const opened = await call(dashboard, { method: "POST", headers: { origin }, body: { action: "open", key: accessKey } });
-    assert.equal(opened.status, 204);
-    assert.match(opened.headers["Set-Cookie"], /HttpOnly; Path=\/; SameSite=Strict/);
-    assert.equal(opened.headers["Cache-Control"], "private, no-store");
-    const headers = { origin, cookie: opened.headers["Set-Cookie"].split(";")[0] };
-    assert.match((await call(dashboard, { headers })).body, /Decision history/);
-    const status = JSON.parse((await call(dashboard, { url: "/api/dashboard?view=status", headers })).body);
-    assert.deepEqual(status, { alerts: null, manualModel: false, scheduledModel: false });
-    assert.equal((await call(dashboard, { method: "POST", headers, body: { action: "judge", coin: "BTC" } })).status, 403);
-    assert.equal((await call(dashboard, { method: "POST", headers: { ...headers, origin: "https://unrelated.invalid" },
-      body: { action: "alerts", paused: false } })).status, 403);
-  } finally {
-    delete process.env.DASHBOARD_ACCESS_KEY;
-    delete process.env.APP_ORIGIN;
+function adminEnvironment(t, overrides = {}) {
+  const values = { VERCEL: "1", APP_ORIGIN: origin, DASHBOARD_ADMIN_USERNAME: username,
+    DASHBOARD_ADMIN_PASSWORD: password, DASHBOARD_SESSION_KEY: sessionKey, ENABLE_MANUAL_MODEL: "false",
+    ENABLE_SCHEDULED_MODEL: "false", BLOB_READ_WRITE_TOKEN: "", ...overrides };
+  for (const [name, value] of Object.entries(values)) {
+    const previous = process.env[name];
+    process.env[name] = value;
+    t.after(() => {
+      if (previous === undefined) delete process.env[name];
+      else process.env[name] = previous;
+    });
   }
+}
+
+function signIn({ headers = { origin }, address, ...credentials } = {}) {
+  const body = new URLSearchParams({ action: "login", username, password, ...credentials });
+  return call(dashboard, { method: "POST", headers, body, address });
+}
+
+test("only the admin form creates a signed session and browser writes require the same origin", async t => {
+  adminEnvironment(t);
+  const entry = await call(dashboard);
+  assert.match(entry.body, /<h1>Sign in<\/h1>/);
+  assert.match(entry.body, /type="password"/);
+  assert.doesNotMatch(entry.body, /Decision history/);
+  assert.ok(!entry.body.includes(password));
+  assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 401);
+  assert.equal((await signIn({ headers: {} })).status, 403);
+  const badPassword = await signIn({ password: "wrong" });
+  assert.equal(badPassword.status, 401);
+  assert.match(badPassword.body, /Incorrect username or password/);
+  assert.equal(badPassword.headers["Set-Cookie"], undefined);
+  assert.equal((await signIn({ username: "someone-else" })).status, 401);
+  assert.equal((await call(dashboard, { method: "POST", headers: { origin },
+    body: { action: "open", key: sessionKey } })).status, 401);
+
+  const opened = await signIn();
+  assert.equal(opened.status, 303);
+  assert.equal(opened.headers.Location, "/");
+  assert.match(opened.headers["Set-Cookie"], /^__Host-signal_session=.*; HttpOnly; Path=\/; SameSite=Lax; Max-Age=43200; Secure$/);
+  assert.equal(opened.headers["Cache-Control"], "private, no-store");
+  const headers = { origin, cookie: opened.headers["Set-Cookie"].split(";")[0] };
+  assert.match((await call(dashboard, { headers })).body, /Decision history/);
+  const status = JSON.parse((await call(dashboard, { url: "/api/dashboard?view=status", headers })).body);
+  assert.deepEqual(status, { alerts: null, manualModel: false, scheduledModel: false });
+  assert.equal((await call(dashboard, { method: "POST", headers, body: { action: "judge", coin: "BTC" } })).status, 403);
+  assert.equal((await call(dashboard, { method: "POST", headers: { ...headers, origin: "https://unrelated.invalid" },
+    body: { action: "alerts", paused: false } })).status, 403);
+  const signedOut = await call(dashboard, { method: "POST", headers, body: new URLSearchParams({ action: "logout" }) });
+  assert.equal(signedOut.status, 303);
+  assert.match(signedOut.headers["Set-Cookie"], /^__Host-signal_session=;.*Max-Age=0; Secure$/);
+});
+
+test("missing production settings keep the dashboard locked and changing the password invalidates old sessions", async t => {
+  adminEnvironment(t, { DASHBOARD_ADMIN_PASSWORD: "" });
+  const pending = await call(dashboard);
+  assert.match(pending.body, /The admin password must be set in Vercel/);
+  assert.doesNotMatch(pending.body, /Decision history|type="password"/);
+  assert.equal((await signIn()).status, 503);
+  assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 503);
+
+  process.env.DASHBOARD_ADMIN_PASSWORD = password;
+  const opened = await signIn();
+  const cookie = opened.headers["Set-Cookie"].split(";")[0];
+  const legacyCookie = sessionCookie(sessionKey).split(";")[0];
+  assert.match((await call(dashboard, { headers: { cookie: legacyCookie } })).body, /<h1>Sign in<\/h1>/);
+  assert.match((await call(dashboard, { headers: { cookie } })).body, /Decision history/);
+  const nextPassword = randomBytes(24).toString("base64url");
+  process.env.DASHBOARD_ADMIN_PASSWORD = nextPassword;
+  assert.match((await call(dashboard, { headers: { cookie } })).body, /<h1>Sign in<\/h1>/);
+  assert.equal((await call(dashboard, { url: "/api/dashboard?view=status", headers: { cookie } })).status, 401);
+  assert.equal((await signIn()).status, 401);
+  assert.equal((await signIn({ password: nextPassword })).status, 303);
+});
+
+test("repeated sign-in failures throttle the source address", async t => {
+  adminEnvironment(t);
+  const address = "192.0.2.70";
+  for (let i = 0; i < 10; i++) assert.equal((await signIn({ address, password: "wrong" })).status, 401);
+  const throttled = await signIn({ address });
+  assert.equal(throttled.status, 429);
+  assert.ok(Number(throttled.headers["Retry-After"]) > 0);
+  assert.equal(throttled.headers["Set-Cookie"], undefined);
+  assert.equal((await signIn({ address: "192.0.2.71" })).status, 303);
 });
 
 test("Telegram and the scheduled job reject unauthenticated requests", async () => {

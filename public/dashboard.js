@@ -24,7 +24,7 @@ async function api(query, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   } : { cache: "no-store" });
-  if (response.status === 401) location.assign("/");
+  if (response.status === 401) location.replace("/");
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "Request failed.");
   return payload;
@@ -259,16 +259,6 @@ coin.addEventListener("change", () => {
 });
 $("refresh").addEventListener("click", () => refreshQuote());
 $("sync-status").addEventListener("click", refreshStatus);
-$("lock").addEventListener("click", async () => {
-  $("lock").disabled = true;
-  try {
-    await api("", { action: "logout" });
-    location.replace("/");
-  } catch {
-    $("model-status").textContent = "Could not lock the dashboard. Try again.";
-    $("lock").disabled = false;
-  }
-});
 window.addEventListener("resize", drawChart);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {

@@ -4,17 +4,19 @@ import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 import { after, before, test } from "node:test";
 import AxeBuilder from "@axe-core/playwright";
-import { chromium } from "playwright";
+import { chromium, devices, webkit } from "playwright";
 
 let browser;
+const engine = process.env.JEV_TEST_BROWSER === "webkit" ? webkit : chromium;
 const newKey = () => randomBytes(32).toString("base64url");
 before(async () => {
-  browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+  browser = await engine.launch({ executablePath: engine === chromium ? process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH : undefined });
 });
 after(async () => { await browser?.close(); });
 
-async function startApp(t, { enableModel = true, blobUnavailable = false } = {}) {
-  const key = newKey();
+async function startApp(t, { enableModel = true, blobUnavailable = false, configured = true } = {}) {
+  const username = "fixture-admin";
+  const password = newKey();
   const webhookKey = newKey();
   const jobKey = newKey();
   const child = spawn(process.execPath, ["--import", "./test/fixtures/providers.js", "scripts/dev.js"], {
@@ -23,7 +25,9 @@ async function startApp(t, { enableModel = true, blobUnavailable = false } = {})
       VERCEL: "",
       PORT: "0",
       APP_ORIGIN: "",
-      DASHBOARD_ACCESS_KEY: key,
+      DASHBOARD_ADMIN_USERNAME: username,
+      DASHBOARD_ADMIN_PASSWORD: configured ? password : "",
+      DASHBOARD_SESSION_KEY: newKey(),
       AI_GATEWAY_API_KEY: "fixture-only",
       ENABLE_MANUAL_MODEL: String(enableModel),
       ENABLE_SCHEDULED_MODEL: String(enableModel),
@@ -55,7 +59,7 @@ async function startApp(t, { enableModel = true, blobUnavailable = false } = {})
       }
     });
   });
-  return { origin, key, jobKey, webhookKey, notifications: () => notifications };
+  return { origin, username, password, jobKey, webhookKey, notifications: () => notifications };
 }
 
 async function pageFor(t, options, { liveFeed = true } = {}) {
@@ -79,37 +83,60 @@ async function pageFor(t, options, { liveFeed = true } = {}) {
 }
 
 async function openDashboard(page, app) {
-  await page.goto(app.origin + "/#access=" + app.key);
+  await page.goto(app.origin);
+  await page.getByLabel("Username").fill(app.username);
+  await page.getByLabel("Password").fill(app.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByRole("heading", { name: "Paper trading" }).waitFor();
-  assert.equal(new URL(page.url()).hash, "");
+  assert.equal(page.url(), app.origin + "/");
 }
 
 async function waitForText(locator, text) {
   await locator.filter({ hasText: text }).waitFor();
 }
 
-test("a private link opens directly, removes the key from the address, and can be locked", async t => {
+test("one admin can sign in independently on a computer, tablet, and phone", async t => {
   const app = await startApp(t, { enableModel: false });
   const page = await pageFor(t);
   await page.goto(app.origin);
-  await page.getByRole("heading", { name: "Private dashboard" }).waitFor();
-  assert.equal(await page.locator("input[type=password]").count(), 0);
+  await page.getByRole("heading", { name: "Sign in" }).waitFor();
+  assert.equal(await page.getByLabel("Username").getAttribute("autocomplete"), "username");
+  assert.equal(await page.getByLabel("Password").getAttribute("autocomplete"), "current-password");
   const statusURL = app.origin + "/api/dashboard?view=status";
   assert.equal((await page.request.get(statusURL)).status(), 401);
-  await page.goto(app.origin + "/#access=" + newKey());
-  await waitForText(page.locator("#access-status"), "invalid");
-  assert.equal(new URL(page.url()).hash, "");
+  await page.getByLabel("Username").fill(app.username);
+  await page.getByLabel("Password").fill("incorrect password");
+  await page.getByLabel("Password").press("Enter");
+  await waitForText(page.getByRole("alert"), "Incorrect username or password");
+  assert.equal(page.url(), app.origin + "/");
   await openDashboard(page, app);
   const [cookie] = await page.context().cookies();
   assert.equal(cookie.httpOnly, true);
-  assert.equal(cookie.sameSite, "Strict");
+  assert.equal(cookie.sameSite, "Lax");
   await waitForText(page.locator("#model-status"), "Jev calls are off");
   assert.equal(await page.getByRole("button", { name: "Ask Jev" }).isDisabled(), true);
-  const lock = page.getByRole("button", { name: "Lock dashboard" });
-  await lock.focus();
+
+  const phone = await pageFor(t, devices[engine === webkit ? "iPhone 15" : "Pixel 7"]);
+  const tablet = await pageFor(t, devices["iPad (gen 7)"]);
+  for (const device of [phone, tablet]) {
+    assert.equal((await device.request.get(statusURL)).status(), 401);
+    await openDashboard(device, app);
+    assert.equal((await device.request.get(statusURL)).status(), 200);
+  }
+  await page.getByRole("button", { name: "Sign out" }).focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("heading", { name: "Private dashboard" }).waitFor();
+  await page.getByRole("heading", { name: "Sign in" }).waitFor();
   assert.equal((await page.request.get(statusURL)).status(), 401);
+  assert.equal((await phone.request.get(statusURL)).status(), 200);
+});
+
+test("the dashboard stays locked while the owner is setting the password", async t => {
+  const app = await startApp(t, { configured: false });
+  const page = await pageFor(t);
+  await page.goto(app.origin);
+  await waitForText(page.locator("main"), "The admin password must be set in .env.local");
+  assert.equal(await page.getByRole("heading", { name: "Paper trading" }).count(), 0);
+  assert.equal((await page.request.get(app.origin + "/api/dashboard?view=quote")).status(), 503);
 });
 
 test("market switching, buy, cooldown, low confidence, and paper fees work in the browser", async t => {
@@ -203,15 +230,19 @@ test("Telegram and the dashboard share pause state, and a scheduled check sends 
 test("desktop, tablet, and phone layouts have readable controls and pass automated accessibility checks", async t => {
   const app = await startApp(t);
   const page = await pageFor(t);
+  await page.goto(app.origin);
+  async function checkLayout() {
+    for (const width of [1440, 810, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "page overflows at " + width);
+      const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      assert.deepEqual(violations.map(v => v.id), [], "accessibility issues at " + width);
+    }
+  }
+  await checkLayout();
   await openDashboard(page, app);
   await waitForText(page.locator("#price"), "$100");
-  for (const width of [1440, 768, 390]) {
-    await page.setViewportSize({ width, height: 900 });
-    await page.getByRole("heading", { name: "Paper account" }).waitFor();
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "page overflows at " + width);
-    const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-    assert.deepEqual(violations.map(v => v.id), [], "accessibility issues at " + width);
-  }
+  await checkLayout();
 });
 
 test("prices and manual calls remain available when alert storage is down", async t => {

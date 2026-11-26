@@ -1,24 +1,25 @@
-import { hasSession, html, json, privacyHeaders, requestBody, sameOrigin, sameSecret, sessionCookie } from "../lib/http.js";
+import { dashboardAdmin, trySignIn } from "../lib/auth.js";
+import { hasSession, html, json, privacyHeaders, requestBody, sameOrigin, sessionCookie } from "../lib/http.js";
 import { marketState, priceHistory, quote, validCoin } from "../lib/market.js";
 import { modelEnabled, signal } from "../lib/model.js";
 import { alertStore, publicStatus, setPaused } from "../lib/state.js";
 import { allowedChat } from "../lib/telegram.js";
-import { accessPage, dashboard } from "../lib/views.js";
+import { dashboard, signInPage } from "../lib/views.js";
+
+function returnHome(res, cookie) {
+  res.setHeader("Set-Cookie", cookie);
+  res.setHeader("Location", "/");
+  res.statusCode = 303;
+  return res.end();
+}
 
 export default async function handler(req, res) {
   privacyHeaders(res);
   const url = new URL(req.url, "http://localhost");
   const view = url.searchParams.get("view");
-  const key = process.env.DASHBOARD_ACCESS_KEY;
-  const configured = Boolean(key && /^[A-Za-z0-9_-]{32,128}$/.test(key) &&
-    (!process.env.VERCEL || process.env.APP_ORIGIN?.startsWith("https://")));
-  if (!configured) {
-    return view || req.method !== "GET" ? json(res, 503, { error: "Dashboard setup required" }) :
-      html(res, 503, "<!doctype html><h1>Dashboard setup required</h1><p>The owner must configure private access.</p>");
-  }
-
-  const hasAccess = hasSession(req, key);
-  if (req.method === "GET" && !view) return html(res, 200, hasAccess ? dashboard : accessPage);
+  const admin = dashboardAdmin();
+  const hasAccess = Boolean(admin && hasSession(req, admin.sessionKey));
+  if (req.method === "GET" && !view) return html(res, 200, hasAccess ? dashboard : signInPage({ configured: Boolean(admin) }));
   if (req.method === "POST" && !sameOrigin(req)) return json(res, 403, { error: "Origin check failed" });
 
   let body;
@@ -28,19 +29,20 @@ export default async function handler(req, res) {
     } catch {
       return json(res, 400, { error: "Invalid request" });
     }
-    if (body?.action === "open") {
-      if (!sameSecret(body.key, key)) return json(res, 401, { error: "Access link is invalid" });
-      res.setHeader("Set-Cookie", sessionCookie(key));
-      res.statusCode = 204;
-      return res.end();
+    if (body?.action === "logout") return returnHome(res, sessionCookie(admin?.sessionKey, true));
+    if (body?.action === "login") {
+      if (!admin) return html(res, 503, signInPage({ configured: false }));
+      const { signedIn, retryAfter } = trySignIn(req, admin, body);
+      if (retryAfter) {
+        res.setHeader("Retry-After", String(retryAfter));
+        return html(res, 429, signInPage({ error: "Too many sign-in attempts. Wait a few minutes and try again." }));
+      }
+      if (!signedIn) return html(res, 401, signInPage({ error: "Incorrect username or password." }));
+      return returnHome(res, sessionCookie(admin.sessionKey));
     }
   }
-  if (!hasAccess) return json(res, 401, { error: "Open your private dashboard link" });
-
-  if (req.method === "POST" && body?.action === "logout") {
-    res.setHeader("Set-Cookie", sessionCookie(key, true));
-    return json(res, 200, { locked: true });
-  }
+  if (!admin) return json(res, 503, { error: "Dashboard setup required" });
+  if (!hasAccess) return json(res, 401, { error: "Sign in to the dashboard" });
 
   try {
     if (req.method === "GET" && view === "quote") {

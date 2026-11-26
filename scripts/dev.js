@@ -15,7 +15,6 @@ const routes = new Map([
 ]);
 const contentTypes = new Map([
   ["/style.css", "text/css"],
-  ["/access.js", "text/javascript"],
   ["/dashboard.js", "text/javascript"],
   ["/strategy.js", "text/javascript"],
 ]);

@@ -27,7 +27,11 @@ jobs:
         run: npm ci
       - name: Test server logic and the alert workflow
         run: npm test
-      - name: Install the browser used by Playwright
-        run: npx playwright install --with-deps chromium
-      - name: Test dashboard flows and accessibility
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
+      - name: Test dashboard flows and accessibility in Chromium
         run: npm run test:e2e
+      - name: Test dashboard flows and accessibility in WebKit
+        run: npm run test:e2e
+        env:
+          JEV_TEST_BROWSER: webkit
