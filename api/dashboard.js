@@ -17,9 +17,9 @@ export default async function handler(req, res) {
   privacyHeaders(res);
   const url = new URL(req.url, "http://localhost");
   const view = url.searchParams.get("view");
-  const admin = dashboardAdmin();
+  const { admin, setupIssue } = dashboardAdmin();
   const hasAccess = Boolean(admin && hasSession(req, admin.sessionKey));
-  if (req.method === "GET" && !view) return html(res, 200, hasAccess ? dashboard : signInPage({ configured: Boolean(admin) }));
+  if (req.method === "GET" && !view) return html(res, 200, hasAccess ? dashboard : signInPage({ setupIssue }));
   if (req.method === "POST" && !sameOrigin(req)) return json(res, 403, { error: "Origin check failed" });
 
   let body;
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     }
     if (body?.action === "logout") return returnHome(res, sessionCookie(admin?.sessionKey, true));
     if (body?.action === "login") {
-      if (!admin) return html(res, 503, signInPage({ configured: false }));
+      if (!admin) return html(res, 503, signInPage({ setupIssue }));
       const { signedIn, retryAfter } = trySignIn(req, admin, body);
       if (retryAfter) {
         res.setHeader("Retry-After", String(retryAfter));

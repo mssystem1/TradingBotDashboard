@@ -101,6 +101,30 @@ test("missing production settings keep the dashboard locked and changing the pas
   assert.equal((await signIn({ password: nextPassword })).status, 303);
 });
 
+test("the setup page identifies invalid settings without revealing their values", async t => {
+  adminEnvironment(t);
+  const cases = [
+    ["DASHBOARD_ADMIN_PASSWORD", "short-fixture", /password in Vercel must be 16 to 128 characters/],
+    ["DASHBOARD_ADMIN_PASSWORD", "test-line-one\ntest-line-two", /password in Vercel must be on one line/],
+    ["DASHBOARD_ADMIN_USERNAME", "invalid fixture account", /admin username in Vercel/],
+    ["DASHBOARD_SESSION_KEY", "short-key-fixture", /session signing key in Vercel/],
+    ["APP_ORIGIN", "https://trailing.example/", /must be an HTTPS origin/],
+  ];
+  for (const [name, value, message] of cases) {
+    const previous = process.env[name];
+    process.env[name] = value;
+    try {
+      const page = await call(dashboard);
+      assert.match(page.body, message);
+      assert.ok(!page.body.includes(value));
+      assert.doesNotMatch(page.body, /type="password"|Decision history/);
+      assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 503);
+    } finally {
+      process.env[name] = previous;
+    }
+  }
+});
+
 test("repeated sign-in failures throttle the source address", async t => {
   adminEnvironment(t);
   const address = "192.0.2.70";
