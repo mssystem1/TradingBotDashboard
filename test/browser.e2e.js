@@ -14,9 +14,8 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
-async function startApp(t, { enableModel = true, blobUnavailable = false, configured = true } = {}) {
+async function startApp(t, { enableModel = true, blobUnavailable = false, configured = true, password = newKey() } = {}) {
   const username = "fixture-admin";
-  const password = newKey();
   const webhookKey = newKey();
   const jobKey = newKey();
   const child = spawn(process.execPath, ["--import", "./test/fixtures/providers.js", "scripts/dev.js"], {
@@ -95,8 +94,8 @@ async function waitForText(locator, text) {
   await locator.filter({ hasText: text }).waitFor();
 }
 
-test("one admin can sign in independently on a computer, tablet, and phone", async t => {
-  const app = await startApp(t, { enableModel: false });
+test("one admin can sign in with a nine-character password on a computer, tablet, and phone", async t => {
+  const app = await startApp(t, { enableModel: false, password: "fixture-9" });
   const page = await pageFor(t);
   await page.goto(app.origin);
   await page.getByRole("heading", { name: "Sign in" }).waitFor();

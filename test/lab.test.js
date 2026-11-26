@@ -104,7 +104,8 @@ test("missing production settings keep the dashboard locked and changing the pas
 test("the setup page identifies invalid settings without revealing their values", async t => {
   adminEnvironment(t);
   const cases = [
-    ["DASHBOARD_ADMIN_PASSWORD", "short-fixture", /password in Vercel must be 16 to 128 characters/],
+    ["DASHBOARD_ADMIN_PASSWORD", "tooShort", /password in Vercel must be 9 to 128 characters/],
+    ["DASHBOARD_ADMIN_PASSWORD", "x".repeat(129), /password in Vercel must be 9 to 128 characters/],
     ["DASHBOARD_ADMIN_PASSWORD", "test-line-one\ntest-line-two", /password in Vercel must be on one line/],
     ["DASHBOARD_ADMIN_USERNAME", "invalid fixture account", /admin username in Vercel/],
     ["DASHBOARD_SESSION_KEY", "short-key-fixture", /session signing key in Vercel/],

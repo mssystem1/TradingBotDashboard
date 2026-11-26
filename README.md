@@ -24,7 +24,7 @@ npm ci
 cp .env.example .env.local
 ```
 
-1. Open `.env.local` and set `DASHBOARD_ADMIN_PASSWORD` to a unique password of 16 to 128 characters. Set `DASHBOARD_SESSION_KEY` to a separate, random value of at least 32 URL-safe characters. The local username defaults to `admin`. Leave both model flags off for the first run.
+1. Open `.env.local` and set `DASHBOARD_ADMIN_PASSWORD` to a unique password of 9 to 128 characters. Set `DASHBOARD_SESSION_KEY` to a separate, random value of at least 32 URL-safe characters. The local username defaults to `admin`. Leave both model flags off for the first run.
 2. Run `npm run dev` and open [the local dashboard](http://127.0.0.1:8767/). Sign in with the username and password from your local settings.
 3. Choose a market and check that the price is updating. Use **Refresh quote** to check the latest snapshot. Press Ctrl+C in the terminal to stop the app.
 
@@ -78,7 +78,7 @@ The workflow is configured to check four times an hour. With the default limit o
 | Setting | Where it goes | Purpose |
 | --- | --- | --- |
 | `DASHBOARD_ADMIN_USERNAME` | Local / Vercel | The single admin username, default `admin`. Up to 64 letters, numbers, periods, underscores, or hyphens, starting with a letter or number. |
-| `DASHBOARD_ADMIN_PASSWORD` | Local / Vercel Secret | The admin's unique password, 16 to 128 characters. |
+| `DASHBOARD_ADMIN_PASSWORD` | Local / Vercel Secret | The admin's unique password, 9 to 128 characters. |
 | `DASHBOARD_SESSION_KEY` | Local / Vercel Secret | Random signing key separate from the password, 32 to 128 letters, numbers, underscores, or hyphens. |
 | `APP_ORIGIN` | Vercel / local webhook setup | Exact production HTTPS origin. For local dashboard use, it can be left blank. |
 | `AI_GATEWAY_API_KEY` | Local / Vercel | Needed for Jev requests. Use a Gateway key with a spend limit appropriate for testing. |
