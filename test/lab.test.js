@@ -50,7 +50,7 @@ test("only the admin form creates a signed session and browser writes require th
   const entry = await call(dashboard);
   assert.match(entry.body, /<h1>Sign in<\/h1>/);
   assert.match(entry.body, /type="password"/);
-  assert.doesNotMatch(entry.body, /Decision history/);
+  assert.doesNotMatch(entry.body, /Practice a trade/);
   assert.ok(!entry.body.includes(password));
   assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 401);
   assert.equal((await signIn({ headers: {} })).status, 403);
@@ -68,7 +68,7 @@ test("only the admin form creates a signed session and browser writes require th
   assert.match(opened.headers["Set-Cookie"], /^__Host-signal_session=.*; HttpOnly; Path=\/; SameSite=Lax; Max-Age=43200; Secure$/);
   assert.equal(opened.headers["Cache-Control"], "private, no-store");
   const headers = { origin, cookie: opened.headers["Set-Cookie"].split(";")[0] };
-  assert.match((await call(dashboard, { headers })).body, /Decision history/);
+  assert.match((await call(dashboard, { headers })).body, /Practice a trade/);
   const status = JSON.parse((await call(dashboard, { url: "/api/dashboard?view=status", headers })).body);
   assert.deepEqual(status, { alerts: null, manualModel: false, scheduledModel: false });
   assert.equal((await call(dashboard, { method: "POST", headers, body: { action: "judge", coin: "BTC" } })).status, 403);
@@ -83,7 +83,7 @@ test("missing production settings keep the dashboard locked and changing the pas
   adminEnvironment(t, { DASHBOARD_ADMIN_PASSWORD: "" });
   const pending = await call(dashboard);
   assert.match(pending.body, /The admin password must be set in Vercel/);
-  assert.doesNotMatch(pending.body, /Decision history|type="password"/);
+  assert.doesNotMatch(pending.body, /Practice a trade|type="password"/);
   assert.equal((await signIn()).status, 503);
   assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 503);
 
@@ -92,7 +92,7 @@ test("missing production settings keep the dashboard locked and changing the pas
   const cookie = opened.headers["Set-Cookie"].split(";")[0];
   const legacyCookie = sessionCookie(sessionKey).split(";")[0];
   assert.match((await call(dashboard, { headers: { cookie: legacyCookie } })).body, /<h1>Sign in<\/h1>/);
-  assert.match((await call(dashboard, { headers: { cookie } })).body, /Decision history/);
+  assert.match((await call(dashboard, { headers: { cookie } })).body, /Practice a trade/);
   const nextPassword = randomBytes(24).toString("base64url");
   process.env.DASHBOARD_ADMIN_PASSWORD = nextPassword;
   assert.match((await call(dashboard, { headers: { cookie } })).body, /<h1>Sign in<\/h1>/);
@@ -118,7 +118,7 @@ test("the setup page identifies invalid settings without revealing their values"
       const page = await call(dashboard);
       assert.match(page.body, message);
       assert.ok(!page.body.includes(value));
-      assert.doesNotMatch(page.body, /type="password"|Decision history/);
+      assert.doesNotMatch(page.body, /type="password"|Practice a trade/);
       assert.equal((await call(dashboard, { url: "/api/dashboard?view=status" })).status, 503);
     } finally {
       process.env[name] = previous;

@@ -14,7 +14,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
-async function startApp(t, { enableModel = true, blobUnavailable = false, configured = true, password = newKey() } = {}) {
+async function startApp(t, { enableModel = true, connectAlerts = true, blobUnavailable = false, configured = true, password = newKey() } = {}) {
   const username = "fixture-admin";
   const webhookKey = newKey();
   const jobKey = newKey();
@@ -32,7 +32,7 @@ async function startApp(t, { enableModel = true, blobUnavailable = false, config
       ENABLE_SCHEDULED_MODEL: String(enableModel),
       ALERT_JOB_SECRET: jobKey,
       TELEGRAM_WEBHOOK_SECRET: webhookKey,
-      TELEGRAM_BOT_TOKEN: "123456:" + newKey(),
+      TELEGRAM_BOT_TOKEN: connectAlerts ? "123456:" + newKey() : "",
       TELEGRAM_CHAT_ID: "123456789",
       BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_fixture_testonly",
       FIXTURE_BLOB_UNAVAILABLE: String(blobUnavailable),
@@ -112,8 +112,8 @@ test("one admin can sign in with a nine-character password on a computer, tablet
   const [cookie] = await page.context().cookies();
   assert.equal(cookie.httpOnly, true);
   assert.equal(cookie.sameSite, "Lax");
-  await waitForText(page.locator("#model-status"), "Jev calls are off");
-  assert.equal(await page.getByRole("button", { name: "Ask Jev" }).isDisabled(), true);
+  await waitForText(page.locator("#model-status"), "AI signals are off");
+  assert.equal(await page.locator("#judge").isHidden(), true);
 
   const phone = await pageFor(t, devices[engine === webkit ? "iPhone 15" : "Pixel 7"]);
   const tablet = await pageFor(t, devices["iPad (gen 7)"]);
@@ -148,17 +148,17 @@ test("market switching, buy, cooldown, low confidence, and paper fees work in th
   await waitForText(page.locator("#feed-status"), "Live");
   const ask = page.getByRole("button", { name: "Ask Jev" });
   await ask.click();
-  await waitForText(page.locator("#history tr").first(), "92%");
+  await waitForText(page.locator("#history li").first(), "92%");
   await waitForText(page.locator("#position"), "Long");
   await waitForText(page.locator("#fees"), "$0.45");
   await waitForText(page.locator("#balance"), "$989.65");
   await ask.click();
-  await waitForText(page.locator("#history tr").first(), "HOLD");
-  assert.match(await page.locator("#history tr").first().innerText(), /SELL/);
+  await waitForText(page.locator("#history li").first(), "Hold");
+  assert.match(await page.locator("#history li").first().innerText(), /SELL/);
   await ask.click();
-  await waitForText(page.locator("#history tr").first(), "60%");
-  assert.match(await page.locator("#history tr").first().innerText(), /HOLD/);
-  await page.getByLabel("Market").selectOption("ETH");
+  await waitForText(page.locator("#history li").first(), "60%");
+  assert.match(await page.locator("#history li").first().innerText(), /Hold/);
+  await page.getByRole("combobox", { name: "Market", exact: true }).selectOption("ETH");
   await waitForText(page.locator("#price"), "$40");
   await waitForText(page.locator("#position"), "Flat");
   await page.getByRole("button", { name: "Refresh quote" }).click();
@@ -166,12 +166,71 @@ test("market switching, buy, cooldown, low confidence, and paper fees work in th
   assert.deepEqual(errors, []);
 });
 
+test("paper buy, close, and sell work from snapshots on a phone with AI and Telegram off", async t => {
+  const app = await startApp(t, { enableModel: false, connectAlerts: false });
+  const phone = devices[engine === webkit ? "iPhone 15" : "Pixel 7"];
+  const page = await pageFor(t, phone, { liveFeed: false });
+  await openDashboard(page, app);
+  await waitForText(page.locator("#feed-status"), "15s updates");
+  await waitForText(page.locator("#model-status"), "AI signals are off");
+  await waitForText(page.locator("#alert-pill"), "Setup needed");
+  assert.equal(await page.locator("#judge").isHidden(), true);
+  assert.equal(await page.locator("#toggle").isHidden(), true);
+  const calls = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().startsWith(app.origin + "/api/dashboard")) calls.push(request.url());
+  });
+
+  const buy = page.getByRole("button", { name: "Paper buy" });
+  const close = page.getByRole("button", { name: "Close position" });
+  assert.equal(await close.isDisabled(), true);
+  await buy.click();
+  await waitForText(page.locator("#trade-status"), "Filled at $101");
+  await waitForText(page.locator("#position"), "Long");
+  await waitForText(page.locator("#balance"), "$989.65");
+  assert.equal(await buy.isDisabled(), true);
+  await close.click();
+  await waitForText(page.locator("#position"), "Flat");
+  await waitForText(page.locator("#balance"), "$979.31");
+  await waitForText(page.locator("#history li").first(), "Closed position");
+  assert.match(await page.locator("#history li").first().innerText(), /Filled at \$99/);
+  await page.getByRole("button", { name: "Paper sell" }).click();
+  await waitForText(page.locator("#position"), "Short");
+  await waitForText(page.locator("#history li").first(), "Filled at $99");
+  assert.equal(await page.locator("#history li").count(), 3);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.deepEqual(calls, []);
+
+  const market = page.getByRole("combobox", { name: "Market", exact: true });
+  await market.selectOption("ETH");
+  await waitForText(page.locator("#account-market"), "ETH");
+  await waitForText(page.locator("#position"), "Flat");
+  await market.selectOption("BTC");
+  await waitForText(page.locator("#position"), "Short");
+});
+
+test("paper fills wait for a current quote after the feed stops", async t => {
+  const app = await startApp(t, { enableModel: false });
+  const page = await pageFor(t, {}, { liveFeed: false });
+  await page.clock.install();
+  await openDashboard(page, app);
+  await waitForText(page.locator("#price"), "$100");
+  const buy = page.getByRole("button", { name: "Paper buy" });
+  assert.equal(await buy.isEnabled(), true);
+  await page.route(app.origin + "/api/dashboard?view=quote&coin=BTC", route => route.abort());
+  await page.clock.fastForward(31_000);
+  await waitForText(page.locator("#trade-status"), "Refresh the quote to continue trading");
+  assert.equal(await buy.isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Paper sell" }).isDisabled(), true);
+  assert.equal(await page.locator("#history li").count(), 0);
+});
+
 test("the chart starts with real-format history, and snapshots keep refreshing when the stream is down", async t => {
   const app = await startApp(t, { enableModel: false });
   const page = await pageFor(t, {}, { liveFeed: false });
   await page.clock.install();
   await openDashboard(page, app);
-  await waitForText(page.locator("#feed-status"), "Snapshot");
+  await waitForText(page.locator("#feed-status"), "15s updates");
   await waitForText(page.locator("#price"), "$100");
   const chartHasLine = await page.locator("#chart").evaluate(canvas => {
     const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
@@ -250,7 +309,7 @@ test("prices and manual calls remain available when alert storage is down", asyn
   await openDashboard(page, app);
   await waitForText(page.locator("#price"), "$100");
   await waitForText(page.locator("#alert-pill"), "Unavailable");
-  assert.equal(await page.getByRole("button", { name: "Resume alerts" }).isDisabled(), true);
+  assert.equal(await page.locator("#toggle").isHidden(), true);
   await page.getByRole("button", { name: "Ask Jev" }).click();
-  await waitForText(page.locator("#history tr").first(), "BUY");
+  await waitForText(page.locator("#history li").first(), "BUY");
 });

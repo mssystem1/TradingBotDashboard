@@ -22,6 +22,7 @@ export function simulateFill(book, action, quote, now) {
     quantity: target,
     fees: book.fees + Math.abs(quantity) * price * 0.00045,
     fills: book.fills + 1,
+    lastFillPrice: price,
     lastFillAt: now,
     side: action,
   };

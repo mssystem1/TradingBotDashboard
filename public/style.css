@@ -16,9 +16,10 @@ button { padding: .55rem .9rem; background: var(--mint); color: #112319; font-we
 button:disabled { opacity: .45; cursor: default; }
 .quiet { background: transparent; color: var(--muted); font-weight: 500; }
 :focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
-h1, h2, p { margin: 0; }
+h1, h2, h3, p { margin: 0; }
 h1 { font-size: clamp(2.1rem, 5vw, 3.65rem); line-height: 1.05; letter-spacing: -.065em; }
 h2 { font-size: 1.05rem; font-weight: 650; letter-spacing: -.015em; }
+h3 { font-size: .93rem; font-weight: 620; }
 .top { height: 65px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 max(1.2rem, calc((100vw - 1176px)/2)); }
 .wordmark { display: flex; align-items: center; gap: .6rem; font-weight: 700; white-space: nowrap; }
 .wordmark i { width: .7rem; height: .7rem; border-radius: .2rem; background: var(--mint); transform: rotate(45deg); }
@@ -33,26 +34,36 @@ h2 { font-size: 1.05rem; font-weight: 650; letter-spacing: -.015em; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; padding: 1.15rem; min-width: 0; }
 .market { display: flex; flex-direction: column; min-height: 425px; }
 .price { font-size: clamp(2rem, 6vw, 4.1rem); line-height: 1.12; letter-spacing: -.065em; margin: .6rem 0 .12rem; }
-.price, dd, td { font-variant-numeric: tabular-nums; }
+.price, dd, time { font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); font-size: .86rem; }
 .pill { border: 1px solid #496352; color: var(--mint); border-radius: 1rem; padding: .15rem .55rem; font-size: .72rem; white-space: nowrap; }
 .pill.neutral { color: var(--muted); border-color: var(--line); }
-canvas { display: block; width: 100%; height: 190px; margin: 1.15rem 0; }
-.actions { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; margin-top: auto; }
-.actions p { flex-basis: 100%; color: var(--muted); font-size: .86rem; min-height: 1.3em; }
+canvas { display: block; width: 100%; height: clamp(120px, 21vw, 190px); margin: .9rem 0; }
+.quote-meta { display: flex; gap: .35rem .75rem; align-items: center; flex-wrap: wrap; }
+.quote-meta button { padding: .27rem .6rem; font-size: .82rem; }
+.practice { border-top: 1px solid var(--line); padding-top: .9rem; margin-top: auto; }
+.practice h2 + p { margin-top: .25rem; }
+.paper-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0 .5rem; }
+.paper-actions button { min-height: 2.75rem; padding: .4rem .25rem; font-size: .88rem; line-height: 1.2; }
+.paper-sell { background: #f5c2b7; color: #301a15; }
+#trade-status { min-height: 1.3em; }
 dl { margin: .6rem 0; }
 dl div { display: flex; align-items: center; justify-content: space-between; padding: .34rem 0; gap: .65rem; }
 dt { color: var(--muted); font-size: .86rem; }
 dd { margin: 0; }
 .total { border-top: 1px solid var(--line); margin-top: .26rem; }
 .total dd { color: var(--mint); font-weight: 700; }
-#alert-note { min-height: 2.6rem; margin: .65rem 0; }
+.connection { border-top: 1px solid var(--line); padding-top: .65rem; margin-top: .65rem; }
+.connection p { margin-top: .3rem; }
+.connection button { margin-top: .55rem; }
+.connection-actions { display: flex; gap: .45rem; flex-wrap: wrap; }
 .history { margin-top: 1rem; }
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: .86rem; text-align: left; margin-top: .6rem; }
-th, td { padding: .55rem .5rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { color: var(--muted); font-weight: 500; }
-tbody tr:last-child td { border-bottom: none; }
+#history-empty { margin-top: .55rem; }
+.activity-list { margin: 0; list-style: none; padding: 0; }
+.activity-list li { padding: .55rem 0; border-bottom: 1px solid var(--line); }
+.activity-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.activity-head { display: flex; align-items: baseline; justify-content: space-between; gap: .35rem .7rem; flex-wrap: wrap; }
+.activity-detail { margin-top: .2rem; }
 .entry { width: calc(100% - 2rem); max-width: 418px; margin: clamp(1rem, 12vh, 7rem) auto 1rem; padding: clamp(1.15rem, 5vw, 2rem); }
 .entry h1 { margin: 1.35rem 0; font-size: clamp(2.2rem, 10vw, 2.6rem); }
 .entry p { color: var(--muted); }

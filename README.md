@@ -7,11 +7,18 @@ TradingBotDashboard, shown in the browser as **Jev Signal Lab**, is a private da
 | Feature | What it shows or does |
 | --- | --- |
 | Live market view | The midpoint between the best bid and ask, a chart seeded from completed one-minute candles, and the quote time. If streaming is unavailable, the dashboard refreshes its snapshot every 15 seconds while the browser tab is visible. |
+| Practice a trade | **Paper buy**, **Paper sell**, and **Close position** use the current bid or ask. Each fill shows its price and fee and appears in Recent activity. |
 | Ask Jev | Requests one BUY or SELL forecast for the next 15 minutes using recent market data. The decision history shows the direction, model confidence, response time, and paper action. |
 | Paper account | Starts at $1,000. The dashboard shows the current position, balance, gross P&L, fees, and net P&L. |
 | Telegram controls | Pause or resume scheduled paper alerts from the dashboard or a single authorized Telegram chat. Both controls use the same saved setting. |
 
-The dashboard starts in public-data mode. Model calls are off until you enable them. The paper account and decision history are kept in the open browser page. Reloading the page resets them.
+The dashboard starts with market prices and paper trading controls. Model calls are off until you enable them. Each market has its own simulated $1,000 account within the open page. Reloading the page resets positions and recent activity.
+
+## Try a paper trade
+
+1. Choose BTC, ETH, or HYPE and wait for the price. **15s updates** means the dashboard is polling for quotes.
+2. Tap **Paper buy** to open a long position or **Paper sell** to open a short position. Check the fill price and fee below the buttons, then look at the paper account and Recent activity.
+3. Tap **Close position** to exit. If the quote expires, wait for the next update or tap **Refresh quote**. Paper trades use public quotes and simulated funds.
 
 ## Run locally
 
@@ -38,7 +45,7 @@ npm run test:e2e
 JEV_TEST_BROWSER=webkit npm run test:e2e
 ```
 
-Playwright exercises sign-in and sign-out, the live-price interface, market switching, simulated fills, and pause and resume in both the dashboard and the Telegram webhook. It checks the desktop, tablet, and phone layouts along with automated accessibility rules in Chromium and WebKit, the browser engine Safari uses. The tests use simulated provider responses. They require no real keys, model credits, or Telegram account. The **Dashboard tests** GitHub workflow runs these checks.
+Playwright exercises sign-in and sign-out, the live-price interface, market switching, manual trading from snapshots, stale quotes, Jev-driven simulated fills, and pause and resume in both the dashboard and the Telegram webhook. It checks desktop, tablet, and phone layouts along with automated accessibility rules in Chromium and WebKit, the browser engine Safari uses. The tests use simulated provider responses. They require no real keys, model credits, or Telegram account. The **Dashboard tests** GitHub workflow runs these checks.
 
 ## How the paper strategy works
 
