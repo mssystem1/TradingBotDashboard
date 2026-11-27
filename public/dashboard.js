@@ -8,6 +8,7 @@ const MAX_FILL_QUOTE_AGE_MS = 30_000;
 const marketEndpoint = "/api/dashboard";
 const coin = $("coin");
 const books = new Map();
+const pendingQuotes = new Set();
 const paperButtons = document.querySelectorAll("[data-paper-action]");
 const actionLabels = { buy: "Paper buy", sell: "Paper sell", flat: "Closed position", hold: "Hold" };
 let socket;
@@ -20,18 +21,36 @@ let alerts;
 let submitting = false;
 let toggling = false;
 let lastPointAt = 0;
-let lastLiveAt = 0;
+let lastLiveAt = -Infinity;
+let clockTime = Number(document.querySelector(".workspace").dataset.serverTime) || Date.now();
+let clockReadAt = performance.now();
+
+function marketTime() {
+  return clockTime + performance.now() - clockReadAt;
+}
 
 async function api(query, body) {
-  const response = await fetch(marketEndpoint + query, body ? {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  } : { cache: "no-store" });
-  if (response.status === 401) location.replace("/");
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Request failed.");
-  return payload;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), body ? 28_000 : 10_000);
+  try {
+    const request = body ? {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    } : { cache: "no-store" };
+    const response = await fetch(marketEndpoint + query, { ...request, signal: controller.signal });
+    const responseTime = Date.parse(response.headers.get("date") || "");
+    if (Number.isFinite(responseTime)) {
+      clockTime = Math.max(marketTime(), responseTime);
+      clockReadAt = performance.now();
+    }
+    if (response.status === 401) location.replace("/");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Request failed.");
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function currentBook() {
@@ -39,7 +58,7 @@ function currentBook() {
 }
 
 function hasCurrentQuote() {
-  return latestQuote && Date.now() - latestQuote.time < MAX_FILL_QUOTE_AGE_MS;
+  return latestQuote && marketTime() - latestQuote.time < MAX_FILL_QUOTE_AGE_MS;
 }
 
 function renderTradeControls() {
@@ -104,7 +123,7 @@ function drawChart() {
 
 function showQuote({ coin: market, bid, ask, time }) {
   if (market !== coin.value || ![bid, ask, time].every(Number.isFinite) || bid <= 0 || ask < bid ||
-      Math.abs(Date.now() - time) > 60_000) return false;
+      Math.abs(marketTime() - time) > 60_000) return false;
   if (time < (latestQuote?.time ?? 0)) return true;
   const price = (bid + ask) / 2;
   latestQuote = { coin: market, bid, ask, price, time };
@@ -120,7 +139,7 @@ function showQuote({ coin: market, bid, ask, time }) {
   quoteExpiry = setTimeout(() => {
     renderTradeControls();
     if (!hasLiveFeed()) feedStatus("Quote stale");
-  }, Math.max(0, time + MAX_FILL_QUOTE_AGE_MS - Date.now()));
+  }, Math.max(0, time + MAX_FILL_QUOTE_AGE_MS - marketTime()));
   renderBook();
   return true;
 }
@@ -131,23 +150,42 @@ function feedStatus(text, active = false) {
 }
 
 function hasLiveFeed() {
-  return socket?.readyState === WebSocket.OPEN && Date.now() - lastLiveAt < SNAPSHOT_INTERVAL_MS;
+  return socket?.readyState === WebSocket.OPEN && performance.now() - lastLiveAt < SNAPSHOT_INTERVAL_MS;
 }
 
-async function refreshQuote(withHistory = false) {
+async function refreshQuote() {
+  const selected = coin.value;
+  if (pendingQuotes.has(selected)) return;
+  pendingQuotes.add(selected);
+  $("refresh").disabled = true;
+  try {
+    const { quote } = await api("?view=quote&coin=" + selected);
+    if (selected !== coin.value) return;
+    if (!showQuote(quote)) throw new Error("Invalid or expired quote");
+    if (!hasLiveFeed()) feedStatus(hasCurrentQuote() ? "15s updates" : "Quote stale");
+  } catch {
+    if (selected === coin.value && !hasLiveFeed()) {
+      feedStatus("Retrying");
+      if (!latestQuote) $("quote-time").textContent = "Quote unavailable. Refresh now or wait for the next retry.";
+    }
+  } finally {
+    pendingQuotes.delete(selected);
+    if (selected === coin.value) $("refresh").disabled = false;
+  }
+}
+
+async function refreshHistory() {
   const selected = coin.value;
   try {
-    const { quote, history } = await api("?view=quote&coin=" + selected + (withHistory ? "&history=1" : ""));
+    const { history } = await api("?view=history&coin=" + selected);
     if (selected !== coin.value) return;
     if (Array.isArray(history) && history.length) {
-      const earliest = points[0]?.[0] ?? quote.time;
+      const earliest = points[0]?.[0] ?? Infinity;
       points = history.filter(([time]) => time < earliest).concat(points);
       drawChart();
     }
-    showQuote(quote);
-    if (!hasLiveFeed()) feedStatus(hasCurrentQuote() ? "15s updates" : "Quote stale");
   } catch {
-    if (!hasLiveFeed()) feedStatus("Feed unavailable");
+    // Current quotes and paper fills can continue without historical candles.
   }
 }
 
@@ -170,14 +208,16 @@ function connect() {
       if (channel !== "bbo" || data.coin !== selected || data.bbo?.length !== 2 || !data.bbo.every(Boolean)) return;
       const [bid, ask] = data.bbo;
       if (!showQuote({ coin: selected, bid: Number(bid.px), ask: Number(ask.px), time: data.time })) return;
-      lastLiveAt = Date.now();
+      if (marketTime() - data.time >= MAX_FILL_QUOTE_AGE_MS) return;
+      lastLiveAt = performance.now();
       feedStatus("Live", true);
     } catch { /* Skip malformed exchange messages. */ }
   });
   next.addEventListener("close", () => {
     clearInterval(ping);
     if (next !== socket) return;
-    feedStatus(hasCurrentQuote() ? "15s updates" : "Reconnecting");
+    if (hasCurrentQuote()) feedStatus("15s updates");
+    else if (!latestQuote && $("feed-status").textContent === "Connecting") feedStatus("Reconnecting");
     setTimeout(() => {
       if (next === socket) connect();
     }, 5000);
@@ -316,7 +356,7 @@ $("toggle").addEventListener("click", async () => {
 coin.addEventListener("change", () => {
   points = [];
   lastPointAt = 0;
-  lastLiveAt = 0;
+  lastLiveAt = -Infinity;
   latestQuote = undefined;
   tradeReceipt = "";
   clearTimeout(quoteExpiry);
@@ -325,7 +365,9 @@ coin.addEventListener("change", () => {
   feedStatus("Connecting");
   drawChart();
   renderBook();
-  refreshQuote(true);
+  $("refresh").disabled = pendingQuotes.has(coin.value);
+  refreshQuote();
+  refreshHistory();
   connect();
 });
 $("refresh").addEventListener("click", () => refreshQuote());
@@ -343,5 +385,6 @@ setInterval(() => {
 }, SNAPSHOT_INTERVAL_MS);
 drawChart();
 connect();
-refreshQuote(true);
+refreshQuote();
+refreshHistory();
 refreshStatus();

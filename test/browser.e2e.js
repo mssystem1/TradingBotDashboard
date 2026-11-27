@@ -209,6 +209,16 @@ test("paper buy, close, and sell work from snapshots on a phone with AI and Tele
   await waitForText(page.locator("#position"), "Short");
 });
 
+test("market snapshots and paper trades work with a four-hour device clock difference", async t => {
+  const app = await startApp(t, { enableModel: false });
+  const page = await pageFor(t, {}, { liveFeed: false });
+  await page.clock.install({ time: new Date(Date.now() + 4 * 60 * 60_000) });
+  await openDashboard(page, app);
+  await waitForText(page.locator("#price"), "$100");
+  await page.getByRole("button", { name: "Paper buy" }).click();
+  await waitForText(page.locator("#position"), "Long");
+});
+
 test("paper fills wait for a current quote after the feed stops", async t => {
   const app = await startApp(t, { enableModel: false });
   const page = await pageFor(t, {}, { liveFeed: false });
@@ -229,21 +239,46 @@ test("the chart starts with real-format history, and snapshots keep refreshing w
   const app = await startApp(t, { enableModel: false });
   const page = await pageFor(t, {}, { liveFeed: false });
   await page.clock.install();
+  const historyURL = app.origin + "/api/dashboard?view=history&coin=BTC";
+  let releaseHistory;
+  const historyGate = new Promise(resolve => { releaseHistory = resolve; });
+  t.after(releaseHistory);
+  await page.route(historyURL, async route => {
+    await historyGate;
+    if (!page.isClosed()) await route.continue();
+  });
   await openDashboard(page, app);
   await waitForText(page.locator("#feed-status"), "15s updates");
   await waitForText(page.locator("#price"), "$100");
-  const chartHasLine = await page.locator("#chart").evaluate(canvas => {
+  assert.equal(await page.getByRole("button", { name: "Paper buy" }).isEnabled(), true);
+  const historyResponse = page.waitForResponse(response => response.url() === historyURL && response.ok());
+  releaseHistory();
+  await historyResponse;
+  await page.waitForFunction(() => {
+    const canvas = document.getElementById("chart");
     const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
     for (let i = 0; i < pixels.length; i += 4) {
       if (pixels[i] > 150 && pixels[i + 1] > 220 && pixels[i + 2] > 160) return true;
     }
     return false;
   });
-  assert.ok(chartHasLine, "completed candles should fill in the chart before a second quote");
   const snapshot = page.waitForResponse(response =>
     response.url() === app.origin + "/api/dashboard?view=quote&coin=BTC" && response.ok());
   await page.clock.fastForward(16_000);
   assert.equal((await (await snapshot).json()).quote.price, 100);
+});
+
+test("a failed initial snapshot prompts a retry and the manual refresh recovers", async t => {
+  const app = await startApp(t, { enableModel: false });
+  const page = await pageFor(t, {}, { liveFeed: false });
+  const quoteURL = app.origin + "/api/dashboard?view=quote&coin=BTC";
+  await page.route(quoteURL, route => route.abort(), { times: 1 });
+  await openDashboard(page, app);
+  await waitForText(page.locator("#quote-time"), "Quote unavailable");
+  assert.equal(await page.getByRole("button", { name: "Paper buy" }).isDisabled(), true);
+  await page.getByRole("button", { name: "Refresh quote" }).click();
+  await waitForText(page.locator("#price"), "$100");
+  assert.equal(await page.getByRole("button", { name: "Paper buy" }).isEnabled(), true);
 });
 
 test("Telegram and the dashboard share pause state, and a scheduled check sends at most once", async t => {

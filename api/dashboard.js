@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   const view = url.searchParams.get("view");
   const { admin, setupIssue } = dashboardAdmin();
   const hasAccess = Boolean(admin && hasSession(req, admin.sessionKey));
-  if (req.method === "GET" && !view) return html(res, 200, hasAccess ? dashboard : signInPage({ setupIssue }));
+  if (req.method === "GET" && !view) return html(res, 200, hasAccess ? dashboard() : signInPage({ setupIssue }));
   if (req.method === "POST" && !sameOrigin(req)) return json(res, 403, { error: "Origin check failed" });
 
   let body;
@@ -53,6 +53,11 @@ export default async function handler(req, res) {
         url.searchParams.get("history") === "1" ? priceHistory(coin).catch(() => []) : [],
       ]);
       return json(res, 200, { quote: latest, history });
+    }
+    if (req.method === "GET" && view === "history") {
+      const coin = url.searchParams.get("coin") || "BTC";
+      if (!validCoin(coin)) return json(res, 400, { error: "Unsupported market" });
+      return json(res, 200, { history: await priceHistory(coin) });
     }
     if (req.method === "GET" && view === "status") {
       const connected = Boolean(process.env.BLOB_READ_WRITE_TOKEN && process.env.TELEGRAM_BOT_TOKEN && allowedChat());
