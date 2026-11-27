@@ -2,6 +2,10 @@
 
 TradingBotDashboard, shown in the browser as **Jev Signal Lab**, is a private dashboard for experimenting with crypto paper trading. It streams public Hyperliquid prices for BTC, ETH, and HYPE. With AI Gateway enabled, you can ask Jev for a directional call and see whether the strategy would act. The dashboard simulates each fill and shows the spread, fees, and resulting profit or loss. It has no exchange order endpoint and requires no exchange account.
 
+## Open the hosted dashboard
+
+Open the Vercel address in your regular browser and sign in with the admin username and password. Choose a market and scroll below its chart. **Ask OpenAI** returns a short market view for you to consider. When enabled, **Ask Jev** shows a BUY or SELL call, then applies the paper strategy. Look in **Recent activity** for the result. **Background checks** links to the latest GitHub-hosted price check. GitHub runs those checks while the dashboard is closed. [Open Jev Signal Lab](https://trading-bot-dashboard-phi-eight.vercel.app/)
+
 ## What you can do
 
 | Feature | What it shows or does |
@@ -10,7 +14,7 @@ TradingBotDashboard, shown in the browser as **Jev Signal Lab**, is a private da
 | Practice a trade | **Paper buy**, **Paper sell**, and **Close position** use the current bid or ask. Each fill shows its price and fee and appears in Recent activity. |
 | Ask Jev | Requests one BUY or SELL forecast for the next 15 minutes using recent market data. Recent activity shows the direction, model confidence, response time, and paper action. Jev requires purchased AI Gateway credits. |
 | Ask OpenAI | Requests a 15-minute market view beside the chart. Use the paper controls to act on a view. |
-| Background checks | GitHub Actions reads public BTC, ETH, and HYPE quotes every 15 minutes. The dashboard links to the latest check. |
+| Background checks | GitHub Actions is scheduled to read public BTC, ETH, and HYPE quotes every 15 minutes. The dashboard links to the latest check. |
 | Paper account | Starts at $1,000. The dashboard shows the current position, balance, gross P&L, fees, and net P&L. |
 | Telegram controls | Pause or resume scheduled paper alerts from the dashboard or a single authorized Telegram chat. Both controls use the same saved setting. |
 
@@ -117,4 +121,4 @@ The workflow checks public prices four times an hour on GitHub's standard public
 
 ## Companion Python starter
 
-The companion Python starter contains the continuous paper loop, headline newsroom, a Hyperliquid paper worker, and a Bybit Demo worker. The newsroom replays published headlines against the market moves that followed. The Hyperliquid worker uses public quotes, persists paper balances and risk limits, and has its own localhost dashboard and Linux system service. The Bybit Demo worker uses Jev for fast calls and OpenAI for higher-level market direction through Vercel AI Gateway. Telegram pause and resume control web alerts only. Worker services have position and daily-loss limits and a STOP-file control.
+The companion Python starter contains the local paper loop, headline newsroom, a Hyperliquid paper worker, and a Bybit Demo worker. The newsroom replays published headlines against the market moves that followed. The Hyperliquid worker uses public quotes and saves paper balances and risk limits. The Bybit Demo worker uses Jev for fast calls and OpenAI for the broader market direction through Vercel AI Gateway. Both workers have position and daily-loss limits and a STOP-file control. Telegram pause and resume control web alerts. The hosted dashboard and scheduled public price checks run on Vercel and GitHub Actions.
