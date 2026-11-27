@@ -14,7 +14,8 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
-async function startApp(t, { enableModel = true, connectAlerts = true, blobUnavailable = false, configured = true, password = newKey() } = {}) {
+async function startApp(t, { enableModel = true, connectAlerts = true, blobUnavailable = false, configured = true,
+  password = newKey(), model = "typesafe-ai/jev", gatewayDenied = false } = {}) {
   const username = "fixture-admin";
   const webhookKey = newKey();
   const jobKey = newKey();
@@ -30,6 +31,8 @@ async function startApp(t, { enableModel = true, connectAlerts = true, blobUnava
       AI_GATEWAY_API_KEY: "fixture-only",
       ENABLE_MANUAL_MODEL: String(enableModel),
       ENABLE_SCHEDULED_MODEL: String(enableModel),
+      MANUAL_SIGNAL_MODEL: model,
+      FIXTURE_GATEWAY_DENIED: String(gatewayDenied),
       ALERT_JOB_SECRET: jobKey,
       TELEGRAM_WEBHOOK_SECRET: webhookKey,
       TELEGRAM_BOT_TOKEN: connectAlerts ? "123456:" + newKey() : "",
@@ -207,6 +210,29 @@ test("paper buy, close, and sell work from snapshots on a phone with AI and Tele
   await waitForText(page.locator("#position"), "Flat");
   await market.selectOption("BTC");
   await waitForText(page.locator("#position"), "Short");
+});
+
+test("Grok and OpenAI market views are visible and leave the paper account flat", async t => {
+  for (const [model, name] of [["spacexai/grok-4.20-non-reasoning", "Grok"], ["openai/gpt-4.1-mini", "OpenAI"]]) {
+    const app = await startApp(t, { model });
+    const page = await pageFor(t);
+    await openDashboard(page, app);
+    await page.getByRole("button", { name: "Ask " + name }).click();
+    await waitForText(page.locator("#history li").first(), name + " view");
+    await waitForText(page.locator("#model-status"), "The recent market moves are mixed.");
+    await waitForText(page.locator("#position"), "Flat");
+    await waitForText(page.locator("#fees"), "$0.00");
+  }
+});
+
+test("Gateway routing rejection is explained and paper controls still work", async t => {
+  const app = await startApp(t, { model: "spacexai/grok-4.20-non-reasoning", gatewayDenied: true });
+  const page = await pageFor(t);
+  await openDashboard(page, app);
+  await page.getByRole("button", { name: "Ask Grok" }).click();
+  await waitForText(page.locator("#model-status"), "AI Gateway found no eligible provider for Grok");
+  await page.getByRole("button", { name: "Paper buy" }).click();
+  await waitForText(page.locator("#position"), "Long");
 });
 
 test("market snapshots and paper trades work with a four-hour device clock difference", async t => {

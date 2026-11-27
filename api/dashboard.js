@@ -1,7 +1,7 @@
 import { dashboardAdmin, trySignIn } from "../lib/auth.js";
 import { hasSession, html, json, privacyHeaders, requestBody, sameOrigin, sessionCookie } from "../lib/http.js";
 import { marketState, priceHistory, quote, validCoin } from "../lib/market.js";
-import { modelEnabled, signal } from "../lib/model.js";
+import { GatewayError, manualModelName, manualSignal, modelEnabled } from "../lib/model.js";
 import { alertStore, publicStatus, setPaused } from "../lib/state.js";
 import { allowedChat } from "../lib/telegram.js";
 import { dashboard, signInPage } from "../lib/views.js";
@@ -70,8 +70,9 @@ export default async function handler(req, res) {
           alertError = true;
         }
       }
-      return json(res, 200, { alerts, manualModel: modelEnabled("manual"), scheduledModel: modelEnabled("scheduled"),
-        ...(alertError ? { alertError } : {}) });
+      const manualModel = modelEnabled("manual");
+      return json(res, 200, { alerts, manualModel, scheduledModel: modelEnabled("scheduled"),
+        ...(manualModel ? { manualModelName: manualModelName() } : {}), ...(alertError ? { alertError } : {}) });
     }
     if (req.method === "POST" && body?.action === "alerts" && typeof body.paused === "boolean") {
       if (!allowedChat() || !process.env.TELEGRAM_BOT_TOKEN) return json(res, 503, { error: "Telegram is not configured" });
@@ -81,12 +82,13 @@ export default async function handler(req, res) {
     if (req.method === "POST" && body?.action === "judge") {
       if (!validCoin(body.coin)) return json(res, 400, { error: "Unsupported market" });
       if (!modelEnabled("manual")) return json(res, 403, { error: "Manual model calls are disabled" });
-      const { metrics } = await marketState(body.coin);
-      const call = await signal(metrics, "manual");
-      return json(res, 200, { call, quote: await quote(body.coin) });
+      const market = await marketState(body.coin);
+      const call = await manualSignal(body.coin, market.metrics);
+      return json(res, 200, { call, quote: call.direction ? market.quote : await quote(body.coin) });
     }
     return json(res, 404, { error: "Route unavailable" });
-  } catch {
+  } catch (error) {
+    if (error instanceof GatewayError) return json(res, 503, { error: error.message });
     return json(res, 503, { error: "Could not complete the request. Check the provider and try again." });
   }
 }

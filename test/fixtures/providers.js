@@ -36,6 +36,17 @@ globalThis.fetch = async (input, options) => {
     const confidence = manualCalls === 3 ? 0.6 : 0.92;
     return Response.json({ answers: { side: { choice: side, probabilities: { [side]: confidence } } } });
   }
+  if (url.hostname === "ai-gateway.vercel.sh" && url.pathname === "/v1/chat/completions") {
+    assert.ok(["spacexai/grok-4.20-non-reasoning", "openai/gpt-4.1-mini"].includes(body.model));
+    assert.equal(JSON.parse(body.messages[1].content).market, "BTC");
+    assert.equal(body.max_tokens, 160);
+    if (process.env.FIXTURE_GATEWAY_DENIED === "true") {
+      return Response.json({ error: { type: "no_providers_available" } }, { status: 403 });
+    }
+    return Response.json({ choices: [{ message: { content: JSON.stringify({
+      direction: "unclear", reason: "The recent market moves are mixed.",
+    }) } }] });
+  }
   if (url.hostname === "api.telegram.org" && url.pathname.endsWith("/sendMessage")) {
     assert.equal(String(body.chat_id), "123456789");
     if (body.text.startsWith("Paper signal")) assert.match(body.text, /No order was placed/);

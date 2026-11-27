@@ -17,6 +17,7 @@ let latestQuote;
 let quoteExpiry;
 let tradeReceipt = "";
 let manualModel = false;
+let manualName = "Jev";
 let alerts;
 let submitting = false;
 let toggling = false;
@@ -68,7 +69,7 @@ function renderTradeControls() {
     button.disabled = !ready || submitting || button.dataset.paperAction === book.side;
   }
   const hint = !latestQuote ? "Waiting for a current quote." : "Refresh the quote to continue trading.";
-  const status = submitting ? "Waiting for the Jev signal…" :
+  const status = submitting ? `Waiting for the ${manualName} signal…` :
     ready ? tradeReceipt || "Choose Paper buy or Paper sell to start." : hint;
   if ($("trade-status").textContent !== status) $("trade-status").textContent = status;
 }
@@ -224,15 +225,20 @@ function connect() {
   });
 }
 
-function renderModel(enabled, unavailable = false) {
+function renderModel(enabled, name = "Jev", unavailable = false) {
   manualModel = enabled;
+  manualName = name;
+  $("model-heading").textContent = enabled ? `${name} signals` : "AI signals";
+  $("judge").textContent = `Ask ${name}`;
   $("judge").hidden = !enabled;
   $("judge").disabled = !enabled || submitting;
   $("model-pill").textContent = unavailable ? "Unavailable" : enabled ? "Ready" : "Off";
   $("model-pill").classList.toggle("neutral", !enabled);
   if (!submitting) {
-    $("model-status").textContent = enabled ? "Request a 15-minute signal. The strategy decides whether to make a paper trade." :
-      unavailable ? "Could not check Jev. Paper trades are still available." : "AI signals are off. You can practice trades above.";
+    $("model-status").textContent = enabled ? (name === "Jev" ?
+      "Request a 15-minute signal. The strategy decides whether to make a paper trade." :
+      "Request a 15-minute market view. Use the paper controls to act on it.") :
+      unavailable ? "Could not check AI signals. Paper trades are still available." : "AI signals are off. You can practice trades above.";
   }
 }
 
@@ -259,10 +265,10 @@ function renderAlerts(status) {
 async function refreshStatus() {
   try {
     const status = await api("?view=status");
-    renderModel(status.manualModel);
+    renderModel(status.manualModel, status.manualModelName);
     renderAlerts(status);
   } catch {
-    renderModel(false, true);
+    renderModel(false, "Jev", true);
     renderAlerts({ alertError: true });
   }
 }
@@ -317,14 +323,20 @@ $("judge").addEventListener("click", async () => {
   submitting = true;
   $("judge").disabled = true;
   coin.disabled = true;
-  $("model-status").textContent = "Waiting for Jev…";
+  $("model-status").textContent = `Waiting for ${manualName}…`;
   renderTradeControls();
   try {
     const { call, quote } = await api("", { action: "judge", coin: selected });
     const now = Date.now();
+    showQuote(quote);
+    if (call.direction) {
+      const directions = { up: "Leaning up", down: "Leaning down", unclear: "Unclear direction" };
+      logActivity(`${selected} · ${call.name} view`, `${directions[call.direction]} · ${call.reason} · ${call.latencyMs} ms`, now);
+      $("model-status").textContent = `${directions[call.direction]}. ${call.reason}`;
+      return;
+    }
     const book = currentBook();
     const action = call.latencyMs > 5000 ? "hold" : decide(call, book.side, now - book.lastFillAt);
-    showQuote(quote);
     applyPaperAction(action, quote, now, call);
     $("model-status").textContent = call.latencyMs > 5000 ? "Late answer. Paper position held." :
       action === "hold" ? "Signal checked. The strategy held the paper position." : "Paper trade added to Recent activity.";

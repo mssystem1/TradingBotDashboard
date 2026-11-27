@@ -9,6 +9,7 @@ TradingBotDashboard, shown in the browser as **Jev Signal Lab**, is a private da
 | Live market view | The midpoint between the best bid and ask, a chart seeded from completed one-minute candles, and the quote time. The quote loads independently of the chart and uses the server clock to check freshness. If streaming is unavailable, the dashboard refreshes its snapshot every 15 seconds while the browser tab is visible. |
 | Practice a trade | **Paper buy**, **Paper sell**, and **Close position** use the current bid or ask. Each fill shows its price and fee and appears in Recent activity. |
 | Ask Jev | Requests one BUY or SELL forecast for the next 15 minutes using recent market data. The decision history shows the direction, model confidence, response time, and paper action. |
+| Grok or OpenAI | Requests a 15-minute market view with a short explanation. Use the paper controls to act on a view. |
 | Paper account | Starts at $1,000. The dashboard shows the current position, balance, gross P&L, fees, and net P&L. |
 | Telegram controls | Pause or resume scheduled paper alerts from the dashboard or a single authorized Telegram chat. Both controls use the same saved setting. |
 
@@ -60,7 +61,7 @@ To change the confidence threshold or the waiting period, edit `MIN_CONFIDENCE` 
 1. Import this repository into a Vercel project. The included [Vercel configuration](vercel.json) serves the frontend and routes dashboard requests to a Node.js function.
 2. In Vercel under **Environment Variables**, set `APP_ORIGIN` to the exact HTTPS address you will open in the browser, with no trailing slash. In the **Production** environment, add `DASHBOARD_ADMIN_PASSWORD` and a separate `DASHBOARD_SESSION_KEY` as **Secret** variables. Set `DASHBOARD_ADMIN_USERNAME` if you want a username other than `admin`.
 3. Deploy or redeploy, then open the configured HTTPS address. Sign in with the same username and password from each browser or device. **Sign out** clears that browser's session. To change the password, update `DASHBOARD_ADMIN_PASSWORD` in Vercel and redeploy to Production. Existing sessions expire as soon as the new production deployment takes over. The app stays locked until its sign-in settings are complete.
-4. To enable **Ask Jev**, add `AI_GATEWAY_API_KEY`, set `ENABLE_MANUAL_MODEL=true`, and redeploy after reviewing your AI Gateway budget. Manual calls and scheduled alerts have separate switches.
+4. To enable manual AI requests, add `AI_GATEWAY_API_KEY`, choose `MANUAL_SIGNAL_MODEL`, set `ENABLE_MANUAL_MODEL=true`, and redeploy after verifying provider access and your Gateway budget. Manual calls and scheduled alerts have separate switches. If Gateway reports there is no eligible provider, the dashboard can still show prices and place paper trades.
 
 The single admin login uses Vercel environment variables and needs no account database. The app requires a signed 12-hour session cookie for dashboard data, limits failed sign-in attempts per server instance, and checks the request origin before accepting browser changes. Keep credentials in local environment files or the relevant service's secret settings. If you enable scheduled alerts or Telegram, their HTTPS endpoints must be reachable by those services. Each endpoint checks its own secret.
 
@@ -89,7 +90,8 @@ The workflow is configured to check four times an hour. With the default limit o
 | `DASHBOARD_SESSION_KEY` | Local / Vercel Secret | Random signing key separate from the password, 32 to 128 letters, numbers, underscores, or hyphens. |
 | `APP_ORIGIN` | Vercel / local webhook setup | Exact production HTTPS origin. For local dashboard use, it can be left blank. |
 | `AI_GATEWAY_API_KEY` | Local / Vercel | Needed for Jev requests. Use a Gateway key with a spend limit appropriate for testing. |
-| `ENABLE_MANUAL_MODEL` | Local / Vercel | Enables **Ask Jev**. Defaults to `false`. |
+| `ENABLE_MANUAL_MODEL` | Local / Vercel | Enables the **Ask** button for the selected model. Defaults to `false`. |
+| `MANUAL_SIGNAL_MODEL` | Local / Vercel | Select `spacexai/grok-4.20-non-reasoning`, `openai/gpt-4.1-mini`, or `typesafe-ai/jev`. The existing default is Jev when this variable is unset. |
 | `ENABLE_SCHEDULED_MODEL` | Vercel | Enables model requests from the alert job. Defaults to `false`. |
 | `BLOB_READ_WRITE_TOKEN` | Vercel | Private storage access for the shared alert state. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | Vercel / local webhook setup | Dedicated bot credentials, authorized private chat, and webhook authentication. |
@@ -112,4 +114,4 @@ The workflow is configured to check four times an hour. With the default limit o
 
 ## Companion Python starter
 
-The separate Python starter contains the continuous paper loop, headline newsroom, and optional Linux-based Bybit Demo worker. Those tools are outside this web repository. The newsroom replays published headlines against the market moves that followed. The demo worker uses Jev for fast calls and Grok for higher-level market direction. In that worker's `.env`, `BIAS_MODEL=openai/gpt-4.1-mini` switches the bias model to OpenAI. Telegram pause and resume control web alerts only. The demo worker has its own system service, position and daily-loss limits, and STOP file.
+The companion Python starter contains the continuous paper loop, headline newsroom, a Hyperliquid paper worker, and a Bybit Demo worker. The newsroom replays published headlines against the market moves that followed. The Hyperliquid worker uses public quotes, persists paper balances and risk limits, and has its own localhost dashboard and Linux system service. The Bybit Demo worker uses Jev for fast calls and Grok for higher-level market direction. In that worker's `.env`, `BIAS_MODEL=openai/gpt-4.1-mini` switches the bias model to OpenAI. Telegram pause and resume control web alerts only. Worker services have position and daily-loss limits and a STOP-file control.
