@@ -1,10 +1,11 @@
 import { dashboardAdmin, trySignIn } from "../lib/auth.js";
 import { hasSession, html, json, privacyHeaders, requestBody, sameOrigin, sessionCookie } from "../lib/http.js";
 import { marketState, priceHistory, quote, validCoin } from "../lib/market.js";
-import { GatewayError, manualModelName, manualSignal, modelEnabled } from "../lib/model.js";
+import { GatewayError, manualModelName, manualSignal, modelEnabled, signal } from "../lib/model.js";
 import { alertStore, publicStatus, setPaused } from "../lib/state.js";
 import { allowedChat } from "../lib/telegram.js";
 import { dashboard, signInPage } from "../lib/views.js";
+import { workerStatus } from "../lib/worker-status.js";
 
 function returnHome(res, cookie) {
   res.setHeader("Set-Cookie", cookie);
@@ -59,6 +60,7 @@ export default async function handler(req, res) {
       if (!validCoin(coin)) return json(res, 400, { error: "Unsupported market" });
       return json(res, 200, { history: await priceHistory(coin) });
     }
+    if (req.method === "GET" && view === "worker") return json(res, 200, await workerStatus());
     if (req.method === "GET" && view === "status") {
       const connected = Boolean(process.env.BLOB_READ_WRITE_TOKEN && process.env.TELEGRAM_BOT_TOKEN && allowedChat());
       let alerts = null;
@@ -71,7 +73,7 @@ export default async function handler(req, res) {
         }
       }
       const manualModel = modelEnabled("manual");
-      return json(res, 200, { alerts, manualModel, scheduledModel: modelEnabled("scheduled"),
+      return json(res, 200, { alerts, manualModel, jevModel: modelEnabled("jev"), scheduledModel: modelEnabled("scheduled"),
         ...(manualModel ? { manualModelName: manualModelName() } : {}), ...(alertError ? { alertError } : {}) });
     }
     if (req.method === "POST" && body?.action === "alerts" && typeof body.paused === "boolean") {
@@ -79,11 +81,12 @@ export default async function handler(req, res) {
       const { value } = await setPaused(alertStore(), body.paused);
       return json(res, 200, { alerts: publicStatus(value) });
     }
-    if (req.method === "POST" && body?.action === "judge") {
+    if (req.method === "POST" && ["judge", "jev"].includes(body?.action)) {
       if (!validCoin(body.coin)) return json(res, 400, { error: "Unsupported market" });
-      if (!modelEnabled("manual")) return json(res, 403, { error: "Manual model calls are disabled" });
+      const jev = body.action === "jev";
+      if (!modelEnabled(jev ? "jev" : "manual")) return json(res, 403, { error: "This manual model is disabled" });
       const market = await marketState(body.coin);
-      const call = await manualSignal(body.coin, market.metrics);
+      const call = jev ? await signal(market.metrics, "jev") : await manualSignal(body.coin, market.metrics);
       return json(res, 200, { call, quote: call.direction ? market.quote : await quote(body.coin) });
     }
     return json(res, 404, { error: "Route unavailable" });

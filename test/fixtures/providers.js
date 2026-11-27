@@ -53,5 +53,10 @@ globalThis.fetch = async (input, options) => {
     process.stdout.write("Fixture Telegram notification\n");
     return Response.json({ ok: true, result: { message_id: 1 } });
   }
+  if (url.hostname === "api.github.com" && url.pathname === "/repos/mssystem1/TradingBotDashboard/actions/workflows/alerts.yml/runs") {
+    assert.equal(url.searchParams.get("branch"), "main");
+    return Response.json({ workflow_runs: [{ id: 12345, updated_at: new Date(Date.now() - 20_000).toISOString(),
+      status: "completed", conclusion: "success" }] });
+  }
   throw new Error("Unexpected external request in the browser fixture");
 };

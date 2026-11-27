@@ -8,8 +8,9 @@ TradingBotDashboard, shown in the browser as **Jev Signal Lab**, is a private da
 | --- | --- |
 | Live market view | The midpoint between the best bid and ask, a chart seeded from completed one-minute candles, and the quote time. The quote loads independently of the chart and uses the server clock to check freshness. If streaming is unavailable, the dashboard refreshes its snapshot every 15 seconds while the browser tab is visible. |
 | Practice a trade | **Paper buy**, **Paper sell**, and **Close position** use the current bid or ask. Each fill shows its price and fee and appears in Recent activity. |
-| Ask Jev | Requests one BUY or SELL forecast for the next 15 minutes using recent market data. The decision history shows the direction, model confidence, response time, and paper action. |
+| Ask Jev | Requests one BUY or SELL forecast for the next 15 minutes using recent market data. Recent activity shows the direction, model confidence, response time, and paper action. Jev requires purchased AI Gateway credits. |
 | Ask OpenAI | Requests a 15-minute market view beside the chart. Use the paper controls to act on a view. |
+| Background checks | GitHub Actions reads public BTC, ETH, and HYPE quotes every 15 minutes. The dashboard links to the latest check. |
 | Paper account | Starts at $1,000. The dashboard shows the current position, balance, gross P&L, fees, and net P&L. |
 | Telegram controls | Pause or resume scheduled paper alerts from the dashboard or a single authorized Telegram chat. Both controls use the same saved setting. |
 
@@ -61,7 +62,7 @@ To change the confidence threshold or the waiting period, edit `MIN_CONFIDENCE` 
 1. Import this repository into a Vercel project. The included [Vercel configuration](vercel.json) serves the frontend and routes dashboard requests to a Node.js function.
 2. In Vercel under **Environment Variables**, set `APP_ORIGIN` to the exact HTTPS address you will open in the browser, with no trailing slash. In the **Production** environment, add `DASHBOARD_ADMIN_PASSWORD` and a separate `DASHBOARD_SESSION_KEY` as **Secret** variables. Set `DASHBOARD_ADMIN_USERNAME` if you want a username other than `admin`.
 3. Deploy or redeploy, then open the configured HTTPS address. Sign in with the same username and password from each browser or device. **Sign out** clears that browser's session. To change the password, update `DASHBOARD_ADMIN_PASSWORD` in Vercel and redeploy to Production. Existing sessions expire as soon as the new production deployment takes over. The app stays locked until its sign-in settings are complete.
-4. To enable manual AI requests, add `AI_GATEWAY_API_KEY`, choose `MANUAL_SIGNAL_MODEL`, set `ENABLE_MANUAL_MODEL=true`, and redeploy after verifying provider access and your Gateway budget. Manual calls and scheduled alerts have separate switches. If Gateway reports there is no eligible provider, the dashboard can still show prices and place paper trades.
+4. To enable manual AI requests, add `AI_GATEWAY_API_KEY`, choose `MANUAL_SIGNAL_MODEL`, set `ENABLE_MANUAL_MODEL=true`, and redeploy after verifying provider access and your Gateway budget. Set `ENABLE_MANUAL_JEV=true` after a successful Jev access check to show **Ask Jev** beside **Ask OpenAI**. Manual calls and scheduled alerts have separate switches.
 
 The single admin login uses Vercel environment variables and needs no account database. The app requires a signed 12-hour session cookie for dashboard data, limits failed sign-in attempts per server instance, and checks the request origin before accepting browser changes. Keep credentials in local environment files or the relevant service's secret settings. If you enable scheduled alerts or Telegram, their HTTPS endpoints must be reachable by those services. Each endpoint checks its own secret.
 
@@ -71,7 +72,7 @@ The single admin login uses Vercel environment variables and needs no account da
 2. Use a dedicated Telegram bot and send it `/start` in a private chat. Set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `TELEGRAM_WEBHOOK_SECRET` in Vercel. The chat ID is the numeric ID of the single authorized private chat. The webhook secret must be at least 32 characters and use only letters, numbers, underscores, or hyphens.
 3. Once the production app is deployed with those settings, set the same Telegram values and production `APP_ORIGIN` in your private local `.env.local`. Run `node scripts/link-telegram.js`. The script checks the private chat and verifies the webhook. It refuses to replace a webhook pointing to a different app.
 4. Generate a separate random `ALERT_JOB_SECRET` of at least 32 characters. Set it both in Vercel and as a repository secret under **Settings → Secrets and variables → Actions**. In the same area, add the repository variable `ALERT_APP_ORIGIN` with the production HTTPS origin, without a trailing slash.
-5. When the model budget is approved, set `AI_GATEWAY_API_KEY` and `ENABLE_SCHEDULED_MODEL=true` in Vercel and redeploy. Set the GitHub repository variable `ALERT_JOB_ENABLED=true`. In **Actions → Paper alerts**, run the workflow manually to check the connection. The stored alert state starts paused, so this first check can return `paused` without using a model request.
+5. When the model budget is approved, set `AI_GATEWAY_API_KEY` and `ENABLE_SCHEDULED_MODEL=true` in Vercel and redeploy. Set the GitHub repository variable `ALERT_JOB_ENABLED=true`. In **Actions → Paper worker**, run the workflow manually to check the connection. The stored alert state starts paused, so this first check can return `paused` without using a model request.
 
 | Action | Dashboard | Telegram |
 | --- | --- | --- |
@@ -79,7 +80,7 @@ The single admin login uses Vercel environment variables and needs no account da
 | Resume checking for notifications | **Resume alerts** | `/resume` |
 | Read the shared state | **Sync status** | `/status` |
 
-The workflow is configured to check four times an hour. With the default limit of 24 model calls per UTC day, the app can ask Jev roughly once an hour. It reserves at most one request per time slot and only sends a message when the call meets the confidence threshold and changes direction from the last alert. GitHub can delay or skip scheduled runs. Pausing suppresses future alert checks and messages. Setting `ALERT_JOB_ENABLED=false` disables the workflow job altogether.
+The workflow checks public prices four times an hour on GitHub's standard public runners. Its optional alert job can ask Jev roughly once an hour with the default limit of 24 model calls per UTC day. It reserves at most one request per time slot and sends a message when confidence meets the threshold and the direction changes. GitHub can delay or skip scheduled runs and may disable schedules on inactive public repositories. Pausing suppresses future alert checks and messages. Setting `ALERT_JOB_ENABLED=false` disables only the alert job.
 
 ## Configuration reference
 
@@ -91,7 +92,9 @@ The workflow is configured to check four times an hour. With the default limit o
 | `APP_ORIGIN` | Vercel / local webhook setup | Exact production HTTPS origin. For local dashboard use, it can be left blank. |
 | `AI_GATEWAY_API_KEY` | Local / Vercel | Needed for Jev requests. Use a Gateway key with a spend limit appropriate for testing. |
 | `ENABLE_MANUAL_MODEL` | Local / Vercel | Enables the **Ask** button for the selected model. Defaults to `false`. |
+| `ENABLE_MANUAL_JEV` | Local / Vercel | Shows the independent **Ask Jev** button after verifying access. Defaults to `false`. |
 | `MANUAL_SIGNAL_MODEL` | Local / Vercel | Select `openai/gpt-4.1-mini` for market views or `typesafe-ai/jev` for directional strategy calls. Existing installations use Jev when this variable is unset. |
+| `PAPER_WORKER_REPO` | Local / Vercel | Optional public GitHub repository in `owner/repo` format for the background checks. The linked Vercel repository is used by default. |
 | `ENABLE_SCHEDULED_MODEL` | Vercel | Enables model requests from the alert job. Defaults to `false`. |
 | `BLOB_READ_WRITE_TOKEN` | Vercel | Private storage access for the shared alert state. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | Vercel / local webhook setup | Dedicated bot credentials, authorized private chat, and webhook authentication. |

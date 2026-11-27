@@ -58,6 +58,8 @@ dd { margin: 0; }
 .signal-panel { margin: 0 0 .85rem; }
 .alert-controls p { margin-top: .3rem; }
 .alert-controls button { margin-top: .55rem; }
+.worker-note { margin-top: .35rem; }
+.worker-link { color: var(--mint); font-size: .86rem; }
 .connection-actions { display: flex; gap: .45rem; flex-wrap: wrap; }
 .history { margin-top: 1rem; }
 #history-empty { margin-top: .55rem; }

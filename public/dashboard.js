@@ -17,9 +17,10 @@ let latestQuote;
 let quoteExpiry;
 let tradeReceipt = "";
 let manualModel = false;
+let jevModel = false;
 let manualName = "Jev";
 let alerts;
-let submitting = false;
+let submitting = "";
 let toggling = false;
 let lastPointAt = 0;
 let lastLiveAt = -Infinity;
@@ -76,7 +77,7 @@ function renderTradeControls() {
     button.disabled = !ready || submitting || button.dataset.paperAction === book.side;
   }
   const hint = !latestQuote ? "Waiting for a current quote." : "Refresh the quote to continue trading.";
-  const status = submitting ? `Waiting for the ${manualName} signal…` :
+  const status = submitting ? `Waiting for the ${submitting} signal…` :
     ready ? tradeReceipt || "Choose Paper buy or Paper sell to start." : hint;
   if ($("trade-status").textContent !== status) $("trade-status").textContent = status;
 }
@@ -245,7 +246,7 @@ function renderModel(enabled, name = "Jev", unavailable = false) {
   $("model-heading").textContent = enabled ? (name === "Jev" ? "Jev signals" : "OpenAI market view") : "AI signals";
   $("judge").textContent = `Ask ${name}`;
   $("judge").hidden = !enabled;
-  $("judge").disabled = !enabled || submitting;
+  $("judge").disabled = !enabled || Boolean(submitting);
   $("model-pill").textContent = unavailable ? "Unavailable" : enabled ? "Ready" : "Off";
   $("model-pill").classList.toggle("neutral", !enabled);
   if (!submitting) {
@@ -253,6 +254,19 @@ function renderModel(enabled, name = "Jev", unavailable = false) {
       "Request a 15-minute signal. The strategy decides whether to make a paper trade." :
       "Request a 15-minute market view. Use the paper controls to act on it.") :
       unavailable ? "Could not check AI signals. Paper trades are still available." : "AI signals are off. Paper trades use the current market quote.";
+  }
+}
+
+function renderJev(enabled, unavailable = false) {
+  jevModel = enabled;
+  $("jev-panel").hidden = manualModel && manualName === "Jev";
+  $("ask-jev").hidden = !enabled;
+  $("ask-jev").disabled = !enabled || Boolean(submitting);
+  $("jev-pill").textContent = unavailable ? "Unavailable" : enabled ? "Ready" : "Setup needed";
+  $("jev-pill").classList.toggle("neutral", !enabled);
+  if (!submitting) {
+    $("jev-status").textContent = enabled ? "Request a directional signal. The strategy decides whether it makes a paper trade." :
+      unavailable ? "Could not check the Jev connection." : "Jev requires paid Gateway credits and a successful access check.";
   }
 }
 
@@ -280,10 +294,36 @@ async function refreshStatus() {
   try {
     const status = await api("?view=status");
     renderModel(status.manualModel, status.manualModelName);
+    renderJev(status.jevModel);
     renderAlerts(status);
   } catch {
     renderModel(false, "Jev", true);
+    renderJev(false, true);
     renderAlerts({ alertError: true });
+  }
+}
+
+async function refreshWorker() {
+  const pill = $("worker-pill");
+  const note = $("worker-note");
+  const link = $("worker-link");
+  try {
+    const { state, at, url } = await api("?view=worker");
+    const labels = { running: "Running", waiting: "Waiting", unconfigured: "Setup needed", passed: "Passed", failed: "Failed" };
+    const minutes = Math.max(0, Math.floor((marketTime() - at) / 60_000));
+    const delayed = state === "passed" && minutes >= 45;
+    pill.textContent = delayed ? "Delayed" : labels[state] || "Unavailable";
+    pill.classList.toggle("neutral", state !== "passed" || delayed);
+    note.textContent = state === "passed" ? `Public price check passed ${minutes < 1 ? "just now" : `${minutes} min ago`}. Schedule: every 15 minutes.` :
+      state === "failed" ? "The latest public price check failed. Open the run for details." :
+      state === "unconfigured" ? "Connect the repository to display background checks." : "Waiting for the next public price check.";
+    link.hidden = !url;
+    if (url) link.href = url;
+  } catch {
+    pill.textContent = "Unavailable";
+    pill.classList.add("neutral");
+    note.textContent = "Could not read the background check status.";
+    link.hidden = true;
   }
 }
 
@@ -332,37 +372,45 @@ for (const button of paperButtons) {
   });
 }
 
-$("judge").addEventListener("click", async () => {
+async function requestSignal(modelAction, name, statusElement) {
+  if (submitting) return;
   const selected = coin.value;
-  submitting = true;
+  submitting = name;
   $("judge").disabled = true;
+  $("ask-jev").disabled = true;
   coin.disabled = true;
-  $("model-status").textContent = `Waiting for ${manualName}…`;
+  statusElement.textContent = `Waiting for ${name}…`;
   renderTradeControls();
   try {
-    const { call, quote } = await api("", { action: "judge", coin: selected });
+    const { call, quote } = await api("", { action: modelAction, coin: selected });
     const now = Date.now();
     showQuote(quote);
     if (call.direction) {
       const directions = { up: "Leaning up", down: "Leaning down", unclear: "Unclear direction" };
       logActivity(`${selected} · ${call.name} view`, `${directions[call.direction]} · ${call.reason} · ${call.latencyMs} ms`, now);
-      $("model-status").textContent = `${directions[call.direction]}. ${call.reason}`;
+      statusElement.textContent = `${directions[call.direction]}. ${call.reason}`;
       return;
     }
     const book = currentBook();
-    const action = call.latencyMs > 5000 ? "hold" : decide(call, book.side, now - book.lastFillAt);
+    const holdReason = call.latencyMs > 5000 ? "Late answer" :
+      marketTime() - quote.time >= MAX_FILL_QUOTE_AGE_MS ? "Quote expired" : "";
+    const action = holdReason ? "hold" : decide(call, book.side, now - book.lastFillAt);
     applyPaperAction(action, quote, now, call);
-    $("model-status").textContent = call.latencyMs > 5000 ? "Late answer. Paper position held." :
+    statusElement.textContent = holdReason ? `${holdReason}. Paper position held.` :
       action === "hold" ? "Signal checked. The strategy held the paper position." : "Paper trade added to Recent activity.";
   } catch (error) {
-    $("model-status").textContent = error.message;
+    statusElement.textContent = error.message;
   } finally {
-    submitting = false;
+    submitting = "";
     $("judge").disabled = !manualModel;
+    $("ask-jev").disabled = !jevModel;
     coin.disabled = false;
     renderTradeControls();
   }
-});
+}
+
+$("judge").addEventListener("click", () => requestSignal("judge", manualName, $("model-status")));
+$("ask-jev").addEventListener("click", () => requestSignal("jev", "Jev", $("jev-status")));
 
 $("toggle").addEventListener("click", async () => {
   if (!alerts || toggling) return;
@@ -403,6 +451,7 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     renderTradeControls();
     refreshStatus();
+    refreshWorker();
     if (!hasLiveFeed()) refreshQuote();
   }
 });
@@ -412,8 +461,12 @@ setInterval(() => {
 setInterval(() => {
   if (!document.hidden) renderQuoteTime();
 }, 1000);
+setInterval(() => {
+  if (!document.hidden) refreshWorker();
+}, 60_000);
 drawChart();
 connect();
 refreshQuote();
 refreshHistory();
 refreshStatus();
+refreshWorker();

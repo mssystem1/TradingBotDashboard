@@ -15,7 +15,7 @@ before(async () => {
 after(async () => { await browser?.close(); });
 
 async function startApp(t, { enableModel = true, connectAlerts = true, blobUnavailable = false, configured = true,
-  password = newKey(), model = "typesafe-ai/jev", gatewayDenied = false } = {}) {
+  password = newKey(), model = "typesafe-ai/jev", gatewayDenied = false, enableJev = false, worker = false } = {}) {
   const username = "fixture-admin";
   const webhookKey = newKey();
   const jobKey = newKey();
@@ -30,9 +30,13 @@ async function startApp(t, { enableModel = true, connectAlerts = true, blobUnava
       DASHBOARD_SESSION_KEY: newKey(),
       AI_GATEWAY_API_KEY: "fixture-only",
       ENABLE_MANUAL_MODEL: String(enableModel),
+      ENABLE_MANUAL_JEV: String(enableJev),
       ENABLE_SCHEDULED_MODEL: String(enableModel),
       MANUAL_SIGNAL_MODEL: model,
       FIXTURE_GATEWAY_DENIED: String(gatewayDenied),
+      VERCEL_GIT_REPO_OWNER: "",
+      VERCEL_GIT_REPO_SLUG: "",
+      PAPER_WORKER_REPO: worker ? "mssystem1/TradingBotDashboard" : "",
       ALERT_JOB_SECRET: jobKey,
       TELEGRAM_WEBHOOK_SECRET: webhookKey,
       TELEGRAM_BOT_TOKEN: connectAlerts ? "123456:" + newKey() : "",
@@ -221,6 +225,28 @@ test("OpenAI market views appear beside the chart and leave the paper account fl
   await waitForText(page.locator("#model-status"), "The recent market moves are mixed.");
   await waitForText(page.locator("#position"), "Flat");
   await waitForText(page.locator("#fees"), "$0.00");
+  await waitForText(page.locator("#jev-status"), "Jev requires paid Gateway credits");
+  assert.equal(await page.locator("#ask-jev").isHidden(), true);
+});
+
+test("Jev signals run next to OpenAI and show a simulated strategy fill", async t => {
+  const app = await startApp(t, { model: "openai/gpt-4.1-mini", enableJev: true });
+  const page = await pageFor(t);
+  await openDashboard(page, app);
+  await page.getByRole("button", { name: "Ask OpenAI" }).waitFor();
+  await page.getByRole("button", { name: "Ask Jev" }).click();
+  await waitForText(page.locator("#history li").first(), "Jev BUY · 92% confidence");
+  await waitForText(page.locator("#position"), "Long");
+  await waitForText(page.locator("#jev-status"), "Paper trade added");
+});
+
+test("the signed-in dashboard shows the latest hosted price check", async t => {
+  const app = await startApp(t, { worker: true });
+  const page = await pageFor(t);
+  await openDashboard(page, app);
+  await waitForText(page.locator("#worker-pill"), "Passed");
+  const latest = page.getByRole("link", { name: "View latest run" });
+  assert.equal(await latest.getAttribute("href"), "https://github.com/mssystem1/TradingBotDashboard/actions/runs/12345");
 });
 
 test("Gateway routing rejection is explained and paper controls still work", async t => {

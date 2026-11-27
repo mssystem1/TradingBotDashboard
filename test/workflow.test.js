@@ -21,6 +21,28 @@ test("the alert workflow stays off until enabled and runs serially", () => {
   assert.equal(check.env.JOB_KEY, "${{ secrets.ALERT_JOB_SECRET }}");
 });
 
+test("the hosted worker runs public price checks on the standard public runner without secrets", async t => {
+  const job = workflow.jobs.prices;
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.deepEqual(job.permissions, { contents: "read" });
+  assert.equal(job.if, "github.event.repository.private == false");
+  assert.doesNotMatch(JSON.stringify(job), /secrets\./);
+  assert.equal(job.steps.at(-1).run, "node scripts/check-markets.js");
+  assert.ok(workflow.on.push.paths.includes("scripts/check-markets.js"));
+  const dir = await mkdtemp(join(tmpdir(), "jev-price-summary-"));
+  t.after(() => rm(dir, { force: true, recursive: true }));
+  const summary = join(dir, "summary.md");
+  const result = spawnSync(process.execPath, ["--import", "./test/fixtures/providers.js", "scripts/check-markets.js"], {
+    encoding: "utf8", env: { GITHUB_STEP_SUMMARY: summary },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const report = await readFile(summary, "utf8");
+  assert.match(report, /Hyperliquid public price check/);
+  assert.match(report, /\| BTC \| 99 \| 101 \| 100 \|/);
+  assert.match(report, /\| ETH \| 39 \| 41 \| 40 \|/);
+  assert.match(report, /\| HYPE \| 9 \| 11 \| 10 \|/);
+});
+
 test("the runner validates its settings, uses HTTPS, and surfaces failed checks", async t => {
   const dir = await mkdtemp(join(tmpdir(), "jev-workflow-"));
   t.after(() => rm(dir, { force: true, recursive: true }));

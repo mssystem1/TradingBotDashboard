@@ -29,7 +29,7 @@ async function call(handler, { url = "/", method = "GET", headers = {}, body, ad
 function adminEnvironment(t, overrides = {}) {
   const values = { VERCEL: "1", APP_ORIGIN: origin, DASHBOARD_ADMIN_USERNAME: username,
     DASHBOARD_ADMIN_PASSWORD: password, DASHBOARD_SESSION_KEY: sessionKey, ENABLE_MANUAL_MODEL: "false",
-    ENABLE_SCHEDULED_MODEL: "false", BLOB_READ_WRITE_TOKEN: "", ...overrides };
+    ENABLE_MANUAL_JEV: "false", ENABLE_SCHEDULED_MODEL: "false", BLOB_READ_WRITE_TOKEN: "", ...overrides };
   for (const [name, value] of Object.entries(values)) {
     const previous = process.env[name];
     process.env[name] = value;
@@ -70,8 +70,9 @@ test("only the admin form creates a signed session and browser writes require th
   const headers = { origin, cookie: opened.headers["Set-Cookie"].split(";")[0] };
   assert.match((await call(dashboard, { headers })).body, /Practice a trade/);
   const status = JSON.parse((await call(dashboard, { url: "/api/dashboard?view=status", headers })).body);
-  assert.deepEqual(status, { alerts: null, manualModel: false, scheduledModel: false });
+  assert.deepEqual(status, { alerts: null, manualModel: false, jevModel: false, scheduledModel: false });
   assert.equal((await call(dashboard, { method: "POST", headers, body: { action: "judge", coin: "BTC" } })).status, 403);
+  assert.equal((await call(dashboard, { method: "POST", headers, body: { action: "jev", coin: "BTC" } })).status, 403);
   assert.equal((await call(dashboard, { method: "POST", headers: { ...headers, origin: "https://unrelated.invalid" },
     body: { action: "alerts", paused: false } })).status, 403);
   const signedOut = await call(dashboard, { method: "POST", headers, body: new URLSearchParams({ action: "logout" }) });
