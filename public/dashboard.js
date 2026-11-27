@@ -62,6 +62,13 @@ function hasCurrentQuote() {
   return latestQuote && marketTime() - latestQuote.time < MAX_FILL_QUOTE_AGE_MS;
 }
 
+function renderQuoteTime() {
+  if (!latestQuote) return;
+  const seconds = Math.max(0, Math.floor((marketTime() - latestQuote.time) / 1000));
+  const message = seconds === 0 ? "Updated just now" : `${hasCurrentQuote() ? "Updated" : "Last quote"} ${seconds}s ago`;
+  if ($("quote-time").textContent !== message) $("quote-time").textContent = message;
+}
+
 function renderTradeControls() {
   const ready = hasCurrentQuote();
   const book = currentBook();
@@ -129,7 +136,7 @@ function showQuote({ coin: market, bid, ask, time }) {
   const price = (bid + ask) / 2;
   latestQuote = { coin: market, bid, ask, price, time };
   $("price").textContent = "$" + midpoint.format(price);
-  $("quote-time").textContent = "Updated " + new Date(time).toLocaleTimeString();
+  renderQuoteTime();
   if (time - lastPointAt >= 150) {
     lastPointAt = time;
     points.push([time, price]);
@@ -137,10 +144,17 @@ function showQuote({ coin: market, bid, ask, time }) {
     drawChart();
   }
   clearTimeout(quoteExpiry);
-  quoteExpiry = setTimeout(() => {
-    renderTradeControls();
-    if (!hasLiveFeed()) feedStatus("Quote stale");
-  }, Math.max(0, time + MAX_FILL_QUOTE_AGE_MS - marketTime()));
+  const remaining = time + MAX_FILL_QUOTE_AGE_MS - marketTime();
+  if (remaining > 0) {
+    quoteExpiry = setTimeout(() => {
+      renderQuoteTime();
+      renderTradeControls();
+      if (!hasLiveFeed()) {
+        feedStatus("Quote stale");
+        if (!document.hidden) refreshQuote();
+      }
+    }, remaining);
+  }
   renderBook();
   return true;
 }
@@ -228,7 +242,7 @@ function connect() {
 function renderModel(enabled, name = "Jev", unavailable = false) {
   manualModel = enabled;
   manualName = name;
-  $("model-heading").textContent = enabled ? `${name} signals` : "AI signals";
+  $("model-heading").textContent = enabled ? (name === "Jev" ? "Jev signals" : "OpenAI market view") : "AI signals";
   $("judge").textContent = `Ask ${name}`;
   $("judge").hidden = !enabled;
   $("judge").disabled = !enabled || submitting;
@@ -238,7 +252,7 @@ function renderModel(enabled, name = "Jev", unavailable = false) {
     $("model-status").textContent = enabled ? (name === "Jev" ?
       "Request a 15-minute signal. The strategy decides whether to make a paper trade." :
       "Request a 15-minute market view. Use the paper controls to act on it.") :
-      unavailable ? "Could not check AI signals. Paper trades are still available." : "AI signals are off. You can practice trades above.";
+      unavailable ? "Could not check AI signals. Paper trades are still available." : "AI signals are off. Paper trades use the current market quote.";
   }
 }
 
@@ -395,6 +409,9 @@ document.addEventListener("visibilitychange", () => {
 setInterval(() => {
   if (!document.hidden && !hasLiveFeed()) refreshQuote();
 }, SNAPSHOT_INTERVAL_MS);
+setInterval(() => {
+  if (!document.hidden) renderQuoteTime();
+}, 1000);
 drawChart();
 connect();
 refreshQuote();

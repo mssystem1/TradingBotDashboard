@@ -9,7 +9,7 @@ TradingBotDashboard, shown in the browser as **Jev Signal Lab**, is a private da
 | Live market view | The midpoint between the best bid and ask, a chart seeded from completed one-minute candles, and the quote time. The quote loads independently of the chart and uses the server clock to check freshness. If streaming is unavailable, the dashboard refreshes its snapshot every 15 seconds while the browser tab is visible. |
 | Practice a trade | **Paper buy**, **Paper sell**, and **Close position** use the current bid or ask. Each fill shows its price and fee and appears in Recent activity. |
 | Ask Jev | Requests one BUY or SELL forecast for the next 15 minutes using recent market data. The decision history shows the direction, model confidence, response time, and paper action. |
-| Grok or OpenAI | Requests a 15-minute market view with a short explanation. Use the paper controls to act on a view. |
+| Ask OpenAI | Requests a 15-minute market view beside the chart. Use the paper controls to act on a view. |
 | Paper account | Starts at $1,000. The dashboard shows the current position, balance, gross P&L, fees, and net P&L. |
 | Telegram controls | Pause or resume scheduled paper alerts from the dashboard or a single authorized Telegram chat. Both controls use the same saved setting. |
 
@@ -91,7 +91,7 @@ The workflow is configured to check four times an hour. With the default limit o
 | `APP_ORIGIN` | Vercel / local webhook setup | Exact production HTTPS origin. For local dashboard use, it can be left blank. |
 | `AI_GATEWAY_API_KEY` | Local / Vercel | Needed for Jev requests. Use a Gateway key with a spend limit appropriate for testing. |
 | `ENABLE_MANUAL_MODEL` | Local / Vercel | Enables the **Ask** button for the selected model. Defaults to `false`. |
-| `MANUAL_SIGNAL_MODEL` | Local / Vercel | Select `spacexai/grok-4.20-non-reasoning`, `openai/gpt-4.1-mini`, or `typesafe-ai/jev`. The existing default is Jev when this variable is unset. |
+| `MANUAL_SIGNAL_MODEL` | Local / Vercel | Select `openai/gpt-4.1-mini` for market views or `typesafe-ai/jev` for directional strategy calls. Existing installations use Jev when this variable is unset. |
 | `ENABLE_SCHEDULED_MODEL` | Vercel | Enables model requests from the alert job. Defaults to `false`. |
 | `BLOB_READ_WRITE_TOKEN` | Vercel | Private storage access for the shared alert state. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | Vercel / local webhook setup | Dedicated bot credentials, authorized private chat, and webhook authentication. |
@@ -114,4 +114,4 @@ The workflow is configured to check four times an hour. With the default limit o
 
 ## Companion Python starter
 
-The companion Python starter contains the continuous paper loop, headline newsroom, a Hyperliquid paper worker, and a Bybit Demo worker. The newsroom replays published headlines against the market moves that followed. The Hyperliquid worker uses public quotes, persists paper balances and risk limits, and has its own localhost dashboard and Linux system service. The Bybit Demo worker uses Jev for fast calls and Grok for higher-level market direction. In that worker's `.env`, `BIAS_MODEL=openai/gpt-4.1-mini` switches the bias model to OpenAI. Telegram pause and resume control web alerts only. Worker services have position and daily-loss limits and a STOP-file control.
+The companion Python starter contains the continuous paper loop, headline newsroom, a Hyperliquid paper worker, and a Bybit Demo worker. The newsroom replays published headlines against the market moves that followed. The Hyperliquid worker uses public quotes, persists paper balances and risk limits, and has its own localhost dashboard and Linux system service. The Bybit Demo worker uses Jev for fast calls and OpenAI for higher-level market direction through Vercel AI Gateway. Telegram pause and resume control web alerts only. Worker services have position and daily-loss limits and a STOP-file control.

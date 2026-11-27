@@ -212,25 +212,23 @@ test("paper buy, close, and sell work from snapshots on a phone with AI and Tele
   await waitForText(page.locator("#position"), "Short");
 });
 
-test("Grok and OpenAI market views are visible and leave the paper account flat", async t => {
-  for (const [model, name] of [["spacexai/grok-4.20-non-reasoning", "Grok"], ["openai/gpt-4.1-mini", "OpenAI"]]) {
-    const app = await startApp(t, { model });
-    const page = await pageFor(t);
-    await openDashboard(page, app);
-    await page.getByRole("button", { name: "Ask " + name }).click();
-    await waitForText(page.locator("#history li").first(), name + " view");
-    await waitForText(page.locator("#model-status"), "The recent market moves are mixed.");
-    await waitForText(page.locator("#position"), "Flat");
-    await waitForText(page.locator("#fees"), "$0.00");
-  }
+test("OpenAI market views appear beside the chart and leave the paper account flat", async t => {
+  const app = await startApp(t, { model: "openai/gpt-4.1-mini" });
+  const page = await pageFor(t);
+  await openDashboard(page, app);
+  await page.getByRole("region", { name: "OpenAI market view" }).getByRole("button", { name: "Ask OpenAI" }).click();
+  await waitForText(page.locator("#history li").first(), "OpenAI view");
+  await waitForText(page.locator("#model-status"), "The recent market moves are mixed.");
+  await waitForText(page.locator("#position"), "Flat");
+  await waitForText(page.locator("#fees"), "$0.00");
 });
 
 test("Gateway routing rejection is explained and paper controls still work", async t => {
-  const app = await startApp(t, { model: "spacexai/grok-4.20-non-reasoning", gatewayDenied: true });
+  const app = await startApp(t, { model: "openai/gpt-4.1-mini", gatewayDenied: true });
   const page = await pageFor(t);
   await openDashboard(page, app);
-  await page.getByRole("button", { name: "Ask Grok" }).click();
-  await waitForText(page.locator("#model-status"), "AI Gateway found no eligible provider for Grok");
+  await page.getByRole("button", { name: "Ask OpenAI" }).click();
+  await waitForText(page.locator("#model-status"), "AI Gateway found no eligible provider for OpenAI");
   await page.getByRole("button", { name: "Paper buy" }).click();
   await waitForText(page.locator("#position"), "Long");
 });

@@ -37,7 +37,7 @@ globalThis.fetch = async (input, options) => {
     return Response.json({ answers: { side: { choice: side, probabilities: { [side]: confidence } } } });
   }
   if (url.hostname === "ai-gateway.vercel.sh" && url.pathname === "/v1/chat/completions") {
-    assert.ok(["spacexai/grok-4.20-non-reasoning", "openai/gpt-4.1-mini"].includes(body.model));
+    assert.equal(body.model, "openai/gpt-4.1-mini");
     assert.equal(JSON.parse(body.messages[1].content).market, "BTC");
     assert.equal(body.max_tokens, 160);
     if (process.env.FIXTURE_GATEWAY_DENIED === "true") {

@@ -16,10 +16,9 @@ button { padding: .55rem .9rem; background: var(--mint); color: #112319; font-we
 button:disabled { opacity: .45; cursor: default; }
 .quiet { background: transparent; color: var(--muted); font-weight: 500; }
 :focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
-h1, h2, h3, p { margin: 0; }
+h1, h2, p { margin: 0; }
 h1 { font-size: clamp(2.1rem, 5vw, 3.65rem); line-height: 1.05; letter-spacing: -.065em; }
 h2 { font-size: 1.05rem; font-weight: 650; letter-spacing: -.015em; }
-h3 { font-size: .93rem; font-weight: 620; }
 .top { height: 65px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 max(1.2rem, calc((100vw - 1176px)/2)); }
 .wordmark { display: flex; align-items: center; gap: .6rem; font-weight: 700; white-space: nowrap; }
 .wordmark i { width: .7rem; height: .7rem; border-radius: .2rem; background: var(--mint); transform: rotate(45deg); }
@@ -56,6 +55,9 @@ dd { margin: 0; }
 .connection { border-top: 1px solid var(--line); padding-top: .65rem; margin-top: .65rem; }
 .connection p { margin-top: .3rem; }
 .connection button { margin-top: .55rem; }
+.signal-panel { margin: 0 0 .85rem; }
+.alert-controls p { margin-top: .3rem; }
+.alert-controls button { margin-top: .55rem; }
 .connection-actions { display: flex; gap: .45rem; flex-wrap: wrap; }
 .history { margin-top: 1rem; }
 #history-empty { margin-top: .55rem; }
